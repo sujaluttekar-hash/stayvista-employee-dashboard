@@ -7,21 +7,66 @@
 
 | Version | Date | What changed |
 |---|---|---|
-| v0.2 | 2026-09-23 | Supabase removed for now. Replaced with preview mode: sample data (`src/lib/mock-data.ts`), demo role picker on login (cookie session), manager score edits saved in browser only, Redash sync fetches but doesn't store. Build passing. |
+| v0.3 | 2026-09-23 | Employees section, L1/L2 manager hierarchy with admin "Assign managers", per-employee scorecards (manual vs automatic metrics, target/actual/weight/score/weighted/status/period/last updated/by), Manager view (self + direct reports only), Admin/Manager/Employee permissions enforced server-side, audit log, Data sources page (Redash connector + clearly-tagged demo values), BI / Data team seeded. |
+| v0.2 | 2026-09-23 | Supabase removed for now. Preview mode: sample data, demo role picker on login (cookie session). |
 | v0.1 | 2026-09-15 | Initial scaffold: schema, RLS, auth, one live department page, Redash proxy stub, manager/HR/data role shells |
 
 ---
 
-## Preview mode (v0.2) — read this first
+## How v0.3 is put together
 
-Supabase is temporarily removed. To bring it back:
-1. `npm install @supabase/ssr @supabase/supabase-js`
-2. Restore `src/lib/supabase/*` and `src/lib/profile.ts` from commit `6ae8ed0`
-3. Swap `getCurrentProfile()` in `src/lib/session.ts` and `visiblePeople()` in `src/lib/mock-data.ts` back to Supabase queries
-4. Restore the `scores` upsert in `my-team/editor.tsx` and the write path in `/api/redash/sync`
-5. Delete `src/lib/mock-data.ts`; run `supabase/migrations/*` (kept untouched)
+```
+src/lib/data/types.ts        ← data model (maps 1:1 to future Supabase tables)
+src/lib/data/seed.ts         ← preview sample data (BI team + hierarchy)
+src/lib/data/store.ts        ← repository: EVERY read/write goes through here
+src/lib/auth/session.ts      ← who is signed in → Viewer {isAdmin, isManager}
+src/lib/auth/permissions.ts  ← EVERY access rule lives here, nowhere else
+src/lib/scoring.ts           ← score / weighted / status / overall formulas
+src/lib/sources/index.ts     ← automatic-metric connectors (Redash, demo)
+src/app/actions.ts           ← all writes: auth → permission → validate → write → audit
+```
 
-Until then: login is NOT secure (anyone can pick any role), and all people are SAMPLE rows.
+**Roles.** Only `is_admin` is stored. "Manager" is derived — anyone with at least one direct report — so it can't drift from the org chart.
+
+| | Admin | Manager | Employee |
+|---|---|---|---|
+| See all departments / employees | Yes | No | No |
+| See own scorecard | Yes | Yes | Yes |
+| See direct reports' scorecards | Yes (everyone) | Yes (L1 reports only) | No |
+| Edit a scorecard | Any | Direct reports only | Never, including own |
+| Add employee, assign L1/L2, edit details | Yes | No | No |
+| Run data sync, demo values, reset | Yes | No | No |
+
+A person the viewer can't see returns "not found" (not "forbidden") so nobody can discover who exists.
+
+**Decisions made (change if wrong)**
+- L2 managers get **no** visibility of skip-level reports. The spec says "directly report"; flip one line in `canViewEmployee` if L2 should see them.
+- Nobody edits their own metrics, including managers. An admin edits the admin's own scorecard.
+- Score = achievement vs target, **capped at 100**, linear. Lower-is-better metrics invert. Overall = weighted average of metrics **that have data**; coverage % is shown next to it.
+- Status bands: ≥100 Achieved, ≥90 On track, ≥70 In progress, below Behind. Empty manual = Not started, empty automatic = Awaiting data.
+- Review cycle is quarterly (Jul–Sep 2026, Oct–Dec 2026). A new period's scorecard copies the last one's metrics with actuals cleared.
+- Hierarchy is proposed for testing: Head of Data (sample) → Ronak → Sujal, Aditya; Aditya → Dhanesh. Designations and targets are placeholders.
+
+**Automatic metrics.** They start empty. A live sync only fills metrics that have `source_config.query_id` set and Redash credentials on the server. The query must return `employee_no, period_id, value`. Demo values exist only when an admin clicks "Fill with demo values", are stored as `actual_source = 'demo'`, and are tagged "Demo" everywhere.
+
+**Preview storage.** JSON file at `.data/preview-store.json` (gitignored), or `/tmp` on Vercel. On Vercel it can reset at any time. Fine for testing, not for real reviews.
+
+**Tested (v0.3).** 45-cell page-access matrix (5 people × 9 pages) matches the table above. Direct server requests bypassing the UI: an employee editing their own metrics, a peer, and a report editing their manager are all rejected; the L1 manager's edit is saved and audited; a reporting loop is rejected; a manager reassigning managers is rejected; reassigning Dhanesh moves access immediately.
+
+---
+
+## Bringing Supabase back
+
+`supabase/schema-v2-draft.sql` is the target schema with RLS that mirrors `permissions.ts`. Steps:
+1. Reconcile with `0001_init.sql` (v2 replaces `people`/`profiles`/`scores`), then turn the draft into migration `0003`.
+2. Re-implement the functions in `src/lib/data/store.ts` with Supabase queries — same names, same return types.
+3. In `src/lib/auth/session.ts`, replace the cookie lookup with `supabase.auth.getUser()` → `app_users`.
+4. Replace the login picker with email/magic-link sign-in.
+5. Keep `permissions.ts` checks in server actions even with RLS on. Two layers on purpose.
+
+Pages and components should need no changes.
+
+---
 
 ## What's real vs. stubbed right now
 
@@ -42,17 +87,22 @@ Until then: login is NOT secure (anyone can pick any role), and all people are S
 
 ## Pending checklist
 
-- [ ] Confirm: new Supabase project (separate from Butler Ops) — name + region?
-- [ ] Confirm: GitHub repo name/org (`stayvista-employee-dashboard`?)
-- [ ] Run `0001_init.sql` + `0002_seed_templates.sql` against the real project
-- [ ] Get real Redash host + API key, test `/api/redash/sync` against one live query
-- [ ] Confirm the row shape each department's Redash query needs to return (`employee_no, month, metric_key, actual`) with whoever owns each query
-- [ ] Port Hearth's charts/leaderboard/scorecard-doc/reports into React components
-- [ ] Wire HR's status-edit control (currently read-only)
-- [ ] Port each metric's `actual -> band` scoring formula server-side (currently manager sets band manually; F&B's real formulas exist in the Hearth prototype and just need transcribing)
-- [ ] Real KPIs/weights for the 11 placeholder departments — need each dept lead
-- [ ] Seed real `people` + `profiles` rows (currently empty — schema only)
-- [ ] Decide: self-service password reset / magic-link vs. HR-provisioned accounts only
+**Decisions for the business**
+- [ ] Confirm the BI hierarchy (who is Ronak's L1, and does Dhanesh report to Aditya or Ronak?)
+- [ ] Confirm L2 managers should NOT see skip-level scorecards
+- [ ] Sign off BI metrics, targets and weights (current ones are proposals)
+- [ ] Confirm scoring: capped-at-100 linear vs HR banding (1–5)
+- [ ] Confirm review cycle: quarterly vs monthly
+- [ ] Real KPIs/weights for the other 12 departments (each dept lead)
+
+**Build**
+- [ ] Hosting decision (see chat) and first deploy
+- [ ] Link Redash query IDs to the automatic BI metrics; confirm `employee_no, period_id, value` shape with query owners
+- [ ] Admin UI to edit a metric's Redash query ID (today it's in data only)
+- [ ] Bring Supabase back (steps above) — needed before real reviews
+- [ ] Real sign-in (magic link vs HR-provisioned)
+- [ ] Port Hearth charts / leaderboard / reports
+- [ ] Transcribe F&B formulas from the Hearth prototype
 
 ---
 

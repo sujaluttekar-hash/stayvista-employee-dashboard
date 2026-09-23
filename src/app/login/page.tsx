@@ -1,52 +1,57 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
-const OPTIONS = [
-  { id: "u-manager", label: "Manager", hint: "Sees and edits own team only" },
-  { id: "u-hr", label: "HR", hint: "Org-wide roster, status only" },
-  { id: "u-data", label: "Data", hint: "Runs Redash syncs" },
-];
+type Option = { id: string; name: string; designation: string; isAdmin: boolean; reports: number };
+
+function describe(o: Option) {
+  if (o.isAdmin) return "Admin: whole organisation";
+  if (o.reports) return `Manager: ${o.reports} direct report${o.reports > 1 ? "s" : ""}`;
+  return "Employee: own scorecard only";
+}
 
 export default function LoginPage() {
   const router = useRouter();
+  const [options, setOptions] = useState<Option[] | null>(null);
   const [loading, setLoading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    fetch("/api/auth").then((r) => r.json()).then(setOptions).catch(() => setError("Couldn't load preview users"));
+  }, []);
+
   async function signIn(userId: string) {
     setLoading(userId); setError(null);
-    const res = await fetch("/api/auth", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId }),
-    });
-    setLoading(null);
-    if (!res.ok) { setError("Could not sign in"); return; }
+    const res = await fetch("/api/auth", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId }) });
+    if (!res.ok) { setLoading(null); setError("Could not sign in"); return; }
     router.push("/"); router.refresh();
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-warmwhite">
-      <div className="w-full max-w-sm bg-panel border border-line rounded p-8">
-        <div className="font-serif text-2xl mb-1">Employee Dashboard</div>
-        <div className="text-xs uppercase tracking-wide text-muted mb-6">StayVista · Preview mode</div>
+    <div className="min-h-screen flex items-center justify-center bg-warmwhite p-4">
+      <div className="w-full max-w-md bg-panel border border-line rounded p-8">
+        <div className="font-serif text-2xl">Employee Dashboard</div>
+        <div className="text-xs text-muted mt-0.5 mb-6">StayVista preview</div>
 
-        <div className="text-xs text-muted mb-3">Choose a view to preview:</div>
-        {OPTIONS.map((o) => (
-          <button
-            key={o.id} onClick={() => signIn(o.id)} disabled={!!loading}
-            className="w-full text-left border border-line rounded px-4 py-3 mb-2 hover:bg-bloom-bg disabled:opacity-50"
-          >
-            <div className="text-sm font-medium">{loading === o.id ? "Opening…" : o.label}</div>
-            <div className="text-[11px] text-muted">{o.hint}</div>
-          </button>
-        ))}
-
-        {error && <div className="text-bad text-xs mt-2">{error}</div>}
-
-        <div className="text-[11px] text-muted mt-4 leading-relaxed">
-          Preview mode uses sample data. Real sign-in returns when the
-          database is connected.
+        <p className="text-sm mb-3">Sign in as:</p>
+        {!options && !error && <div className="text-xs text-muted">Loading…</div>}
+        <div className="space-y-2">
+          {options?.map((o) => (
+            <button key={o.id} onClick={() => signIn(o.id)} disabled={!!loading}
+              className="w-full text-left border border-line rounded px-4 py-3 hover:bg-sky-bg/50 disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-deep">
+              <div className="flex justify-between gap-3">
+                <span className="text-sm font-medium">{loading === o.id ? "Opening…" : o.name}</span>
+                <span className="text-[11px] text-muted">{o.designation}</span>
+              </div>
+              <div className="text-xs text-muted mt-0.5">{describe(o)}</div>
+            </button>
+          ))}
         </div>
+
+        {error && <div className="text-bad text-xs mt-3">{error}</div>}
+        <p className="text-[11px] text-muted mt-5 leading-relaxed">
+          Preview mode has no passwords, so anyone with the link can pick any person. Real sign-in comes with Supabase.
+        </p>
       </div>
     </div>
   );

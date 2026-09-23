@@ -1,10 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
-import { userById } from "@/lib/mock-data";
-import { SESSION_COOKIE } from "@/lib/session";
+import { db } from "@/lib/data/store";
+import { SESSION_COOKIE } from "@/lib/auth/session";
+
+// PREVIEW login: pick a user, no password. Replace with Supabase Auth.
+export async function GET() {
+  return NextResponse.json(
+    db.users().map((u) => {
+      const e = db.employee(u.employee_id);
+      return { id: u.id, name: u.display_name, designation: e?.designation ?? "", isAdmin: u.is_admin,
+        reports: e ? db.directReports(e.id).length : 0 };
+    })
+  );
+}
 
 export async function POST(req: NextRequest) {
   const { userId } = await req.json();
-  if (!userById(userId)) return NextResponse.json({ error: "Unknown demo user" }, { status: 400 });
+  if (!db.user(userId)) return NextResponse.json({ error: "Unknown user" }, { status: 400 });
   const res = NextResponse.json({ ok: true });
   res.cookies.set(SESSION_COOKIE, userId, { httpOnly: true, sameSite: "lax", path: "/" });
   return res;
