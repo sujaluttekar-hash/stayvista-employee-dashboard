@@ -19,7 +19,7 @@ create table employees (
   employee_no text unique not null,
   name text not null,
   designation text not null default '',
-  department_id uuid not null references departments(id),
+  department_id uuid references departments(id),  -- null = unassigned
   status text not null default 'active' check (status in ('active','exit','resigned')),
   l1_manager_id uuid references employees(id),
   l2_manager_id uuid references employees(id),
@@ -27,11 +27,11 @@ create table employees (
 );
 create index on employees(l1_manager_id);
 
+-- Exactly three role logins. Employees are data, not users.
 create table app_users (
   id uuid primary key references auth.users(id) on delete cascade,
   display_name text not null,
-  employee_id uuid unique references employees(id),
-  is_admin boolean not null default false
+  role text not null check (role in ('hr','manager','data'))
 );
 
 create table review_periods (
@@ -76,36 +76,27 @@ create table audit_log (
 );
 
 -- ── Helpers ─────────────────────────────────────────────────────────
-create function me() returns uuid language sql stable security definer as
-  $$ select employee_id from app_users where id = auth.uid() $$;
-create function is_admin() returns boolean language sql stable security definer as
-  $$ select coalesce((select is_admin from app_users where id = auth.uid()), false) $$;
-create function can_view(emp uuid) returns boolean language sql stable security definer as
-  $$ select is_admin() or emp = me() or exists (select 1 from employees where id = emp and l1_manager_id = me()) $$;
-create function can_edit(emp uuid) returns boolean language sql stable security definer as
-  $$ select is_admin() or exists (select 1 from employees where id = emp and l1_manager_id = me()) $$;
+create function my_role() returns text language sql stable security definer as
+  $$ select role from app_users where id = auth.uid() $$;
 
--- ── RLS (mirror of permissions.ts) ──────────────────────────────────
+-- ── RLS (mirror of src/lib/auth/permissions.ts) ─────────────────────
+--   read everything: any signed-in role
+--   employees/departments writes: hr, data
+--   scorecards/metrics writes:    manager, data
+alter table departments enable row level security;
 alter table employees enable row level security;
 alter table scorecards enable row level security;
 alter table scorecard_metrics enable row level security;
 alter table audit_log enable row level security;
-alter table departments enable row level security;
 
-create policy "departments readable" on departments for select using (auth.uid() is not null);
-create policy "admin writes departments" on departments for all using (is_admin()) with check (is_admin());
+create policy "read" on departments for select using (my_role() is not null);
+create policy "read" on employees for select using (my_role() is not null);
+create policy "read" on scorecards for select using (my_role() is not null);
+create policy "read" on scorecard_metrics for select using (my_role() is not null);
+create policy "read" on audit_log for select using (my_role() is not null);
 
-create policy "view self, direct reports, or all if admin" on employees for select using (can_view(id));
-create policy "admin manages employees" on employees for all using (is_admin()) with check (is_admin());
-
-create policy "view scorecards" on scorecards for select using (can_view(employee_id));
-create policy "edit scorecards" on scorecards for all using (can_edit(employee_id)) with check (can_edit(employee_id));
-
-create policy "view metrics" on scorecard_metrics for select
-  using (can_view((select employee_id from scorecards s where s.id = scorecard_id)));
-create policy "edit metrics" on scorecard_metrics for all
-  using (can_edit((select employee_id from scorecards s where s.id = scorecard_id)))
-  with check (can_edit((select employee_id from scorecards s where s.id = scorecard_id)));
-
-create policy "view audit" on audit_log for select using (can_view(entity_id));
+create policy "manage departments" on departments for all using (my_role() in ('hr','data')) with check (my_role() in ('hr','data'));
+create policy "manage employees" on employees for all using (my_role() in ('hr','data')) with check (my_role() in ('hr','data'));
+create policy "edit scorecards" on scorecards for all using (my_role() in ('manager','data')) with check (my_role() in ('manager','data'));
+create policy "edit metrics" on scorecard_metrics for all using (my_role() in ('manager','data')) with check (my_role() in ('manager','data'));
 -- audit rows are written by server code with the service role only.

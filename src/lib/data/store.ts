@@ -63,14 +63,14 @@ const uid = (prefix: string) => `${prefix}-${Date.now().toString(36)}${Math.rand
 // ── Reads ────────────────────────────────────────────────────────────
 export const db = {
   departments: () => read().departments,
-  department: (id: string) => read().departments.find((d) => d.id === id) ?? null,
+  department: (id: string | null | undefined) => (id ? read().departments.find((d) => d.id === id) ?? null : null),
   departmentBySlug: (slug: string) => read().departments.find((d) => d.slug === slug) ?? null,
   employees: () => [...read().employees].sort((a, b) => a.name.localeCompare(b.name)),
   employee: (id: string | null | undefined) => (id ? read().employees.find((e) => e.id === id) ?? null : null),
   directReports: (managerId: string) => db.employees().filter((e) => e.l1_manager_id === managerId),
   users: () => read().users,
   user: (id: string | undefined) => read().users.find((u) => u.id === id) ?? null,
-  userForEmployee: (employeeId: string) => read().users.find((u) => u.employee_id === employeeId) ?? null,
+  employeesIn: (departmentId: string) => db.employees().filter((e) => e.department_id === departmentId),
   periods: () => read().periods,
   scorecard: (employeeId: string, periodId: string) =>
     read().scorecards.find((s) => s.employee_id === employeeId && s.period_id === periodId) ?? null,
@@ -104,10 +104,44 @@ export const writes = {
     return mutate((s) => {
       const e: Employee = { ...data, id: uid("e") };
       s.employees.push(e);
-      // Every employee gets a login in preview so their view can be tested.
-      s.users.push({ id: uid("u"), display_name: e.name, employee_id: e.id, is_admin: false });
       log(s, { actor_id: actorId, action: "employee.create", entity_id: e.id, summary: `Added ${e.name}` });
       return e;
+    });
+  },
+
+  // Removes the employee, their scorecards/metrics, and clears them as anyone's manager.
+  removeEmployee(actorId: string, id: string) {
+    return mutate((s) => {
+      const e = s.employees.find((x) => x.id === id);
+      if (!e) return null;
+      const scIds = new Set(s.scorecards.filter((x) => x.employee_id === id).map((x) => x.id));
+      s.metrics = s.metrics.filter((m) => !scIds.has(m.scorecard_id));
+      s.scorecards = s.scorecards.filter((x) => !scIds.has(x.id));
+      s.employees = s.employees.filter((x) => x.id !== id);
+      const orphaned: string[] = [];
+      for (const x of s.employees) {
+        if (x.l1_manager_id === id) { x.l1_manager_id = null; orphaned.push(x.name); }
+        if (x.l2_manager_id === id) x.l2_manager_id = null;
+      }
+      log(s, { actor_id: actorId, action: "employee.delete", entity_id: id, summary: `Removed ${e.name}` });
+      return { name: e.name, orphaned };
+    });
+  },
+
+  // Adds the same metric to every employee in a department for a period
+  // (starting their scorecard if needed). Returns how many got it.
+  addMetricToDepartment(actorId: string, departmentId: string, periodId: string,
+    data: Omit<ScorecardMetric, "id" | "scorecard_id" | "sort_order" | "updated_at" | "updated_by">) {
+    return mutate((s) => {
+      const people = s.employees.filter((e) => e.department_id === departmentId);
+      for (const e of people) {
+        let sc = s.scorecards.find((x) => x.employee_id === e.id && x.period_id === periodId);
+        if (!sc) { sc = { id: uid("sc"), employee_id: e.id, period_id: periodId }; s.scorecards.push(sc); }
+        const order = s.metrics.filter((m) => m.scorecard_id === sc!.id).length;
+        s.metrics.push({ ...data, id: uid("m"), scorecard_id: sc.id, sort_order: order, updated_at: new Date().toISOString(), updated_by: actorId });
+        log(s, { actor_id: actorId, action: "metric.create", entity_id: e.id, summary: `Added metric “${data.name}” (department-wide)` });
+      }
+      return people.length;
     });
   },
 

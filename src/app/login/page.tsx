@@ -2,13 +2,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
-type Option = { id: string; name: string; designation: string; isAdmin: boolean; reports: number };
-
-function describe(o: Option) {
-  if (o.isAdmin) return "Admin: whole organisation";
-  if (o.reports) return `Manager: ${o.reports} direct report${o.reports > 1 ? "s" : ""}`;
-  return "Employee: own scorecard only";
-}
+type Option = { id: string; name: string; description: string };
 
 export default function LoginPage() {
   const router = useRouter();
@@ -39,18 +33,15 @@ export default function LoginPage() {
           {options?.map((o) => (
             <button key={o.id} onClick={() => signIn(o.id)} disabled={!!loading}
               className="w-full text-left border border-line rounded px-4 py-3 hover:bg-sky-bg/50 disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-deep">
-              <div className="flex justify-between gap-3">
-                <span className="text-sm font-medium">{loading === o.id ? "Opening…" : o.name}</span>
-                <span className="text-[11px] text-muted">{o.designation}</span>
-              </div>
-              <div className="text-xs text-muted mt-0.5">{describe(o)}</div>
+              <div className="text-sm font-medium">{loading === o.id ? "Opening…" : o.name}</div>
+              <div className="text-xs text-muted mt-0.5">{o.description}</div>
             </button>
           ))}
         </div>
 
         {error && <div className="text-bad text-xs mt-3">{error}</div>}
         <p className="text-[11px] text-muted mt-5 leading-relaxed">
-          Preview mode has no passwords, so anyone with the link can pick any person. Real sign-in comes with Supabase.
+          Preview mode has no passwords, so anyone with the link can pick any login. Real sign-in comes with Supabase.
         </p>
       </div>
     </div>

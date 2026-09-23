@@ -19,19 +19,18 @@ export type Employee = {
   employee_no: string;
   name: string;
   designation: string;
-  department_id: string;
+  department_id: string | null; // null = not placed in a department yet
   status: EmployeeStatus;
   l1_manager_id: string | null; // direct manager — the only person who can edit this employee's scorecard
   l2_manager_id: string | null; // skip-level manager — shown for context, no edit rights
 };
 
-// A login. `is_admin` is the only stored permission; "manager" is derived
-// from data (anyone with direct reports), so it can never drift from the org chart.
+// A login. There are exactly three role logins — employees are DATA, not users.
+export type Role = "hr" | "manager" | "data";
 export type AppUser = {
   id: string;
   display_name: string;
-  employee_id: string | null;
-  is_admin: boolean;
+  role: Role;
 };
 
 export type MetricType = "manual" | "automatic";

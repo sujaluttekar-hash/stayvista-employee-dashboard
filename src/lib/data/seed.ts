@@ -4,13 +4,12 @@
 //
 // • BI team names (Ronak, Sujal, Aditya, Dhanesh) are real; their
 //   designations, targets and hierarchy are PROPOSED for testing only.
-// • "Head of Data (sample)" is a placeholder person, not a real employee.
 // • Manual actuals marked updated_by: "seed" are sample values.
 // • Automatic metrics start EMPTY on purpose — no fake "live" numbers.
 // ─────────────────────────────────────────────────────────────────────
 import type { Department, Employee, AppUser, ReviewPeriod, Scorecard, ScorecardMetric, Store } from "./types";
 
-export const STORE_VERSION = 2;
+export const STORE_VERSION = 3;
 
 const DEPARTMENTS: Department[] = [
   { id: "d-bi", slug: "business-intelligence", name: "Business Intelligence / Data", accent: "sky", has_real_metrics: true },
@@ -28,26 +27,20 @@ const DEPARTMENTS: Department[] = [
   { id: "d-brand", slug: "brand-marketing", name: "Brand & Marketing", accent: "bloom", has_real_metrics: false },
 ];
 
-// Hierarchy (proposed, for testing permissions):
-//   Head of Data (sample)
-//   └── Ronak
-//       ├── Sujal
-//       └── Aditya
-//           └── Dhanesh
+// Employees are records managed from the Management tab (HR / Data).
+// Hierarchy (proposed, for testing):  Ronak → Sujal, Aditya;  Aditya → Dhanesh
 const EMPLOYEES: Employee[] = [
-  { id: "e-head", employee_no: "SAMPLE-100", name: "Head of Data (sample)", designation: "Head of Data", department_id: "d-bi", status: "active", l1_manager_id: null, l2_manager_id: null },
-  { id: "e-ronak", employee_no: "BI-001", name: "Ronak", designation: "BI Lead", department_id: "d-bi", status: "active", l1_manager_id: "e-head", l2_manager_id: null },
-  { id: "e-sujal", employee_no: "BI-002", name: "Sujal", designation: "Data Analyst — Automation", department_id: "d-bi", status: "active", l1_manager_id: "e-ronak", l2_manager_id: "e-head" },
-  { id: "e-aditya", employee_no: "BI-003", name: "Aditya", designation: "Senior Data Analyst", department_id: "d-bi", status: "active", l1_manager_id: "e-ronak", l2_manager_id: "e-head" },
+  { id: "e-ronak", employee_no: "BI-001", name: "Ronak", designation: "BI Lead", department_id: "d-bi", status: "active", l1_manager_id: null, l2_manager_id: null },
+  { id: "e-sujal", employee_no: "BI-002", name: "Sujal", designation: "Data Analyst — Automation", department_id: "d-bi", status: "active", l1_manager_id: "e-ronak", l2_manager_id: null },
+  { id: "e-aditya", employee_no: "BI-003", name: "Aditya", designation: "Senior Data Analyst", department_id: "d-bi", status: "active", l1_manager_id: "e-ronak", l2_manager_id: null },
   { id: "e-dhanesh", employee_no: "BI-004", name: "Dhanesh", designation: "Data Analyst", department_id: "d-bi", status: "active", l1_manager_id: "e-aditya", l2_manager_id: "e-ronak" },
 ];
 
+// The ONLY three logins.
 const USERS: AppUser[] = [
-  { id: "u-admin", display_name: "Admin (Head of Data, sample)", employee_id: "e-head", is_admin: true },
-  { id: "u-ronak", display_name: "Ronak", employee_id: "e-ronak", is_admin: false },
-  { id: "u-sujal", display_name: "Sujal", employee_id: "e-sujal", is_admin: false },
-  { id: "u-aditya", display_name: "Aditya", employee_id: "e-aditya", is_admin: false },
-  { id: "u-dhanesh", display_name: "Dhanesh", employee_id: "e-dhanesh", is_admin: false },
+  { id: "u-hr", display_name: "HR", role: "hr" },
+  { id: "u-manager", display_name: "Manager", role: "manager" },
+  { id: "u-data", display_name: "Data team", role: "data" },
 ];
 
 const PERIODS: ReviewPeriod[] = [
@@ -62,10 +55,6 @@ type MetricSeed = Omit<ScorecardMetric, "id" | "scorecard_id" | "sort_order" | "
 const redash = { kind: "redash" as const, query_id: null, value_column: "value" };
 
 const METRICS_BY_EMPLOYEE: Record<string, MetricSeed[]> = {
-  "e-head": [
-    { name: "BI roadmap delivery", description: "Share of committed roadmap items shipped this quarter", type: "manual", unit: "%", direction: "higher_is_better", target: 90, weight: 50 },
-    { name: "Data quality incidents", description: "Reported data errors reaching business users", type: "automatic", unit: "count", direction: "lower_is_better", target: 2, weight: 50 },
-  ],
   "e-ronak": [
     { name: "Revenue reporting accuracy", description: "Revenue reports matching finance close figures", type: "automatic", unit: "%", direction: "higher_is_better", target: 98, weight: 25 },
     { name: "Dashboard automation", description: "Manual reports replaced by automated dashboards", type: "manual", unit: "count", direction: "higher_is_better", target: 5, weight: 20, actual: 4 },

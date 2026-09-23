@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireViewer } from "@/lib/auth/session";
-import { canEditScorecard, canManageOrg, canViewEmployee, visibleEmployees } from "@/lib/auth/permissions";
+import { canEditScores, canManageEmployees } from "@/lib/auth/permissions";
 import { db } from "@/lib/data/store";
 import { overall } from "@/lib/scoring";
 import { resolvePeriod } from "@/lib/periods";
@@ -14,16 +14,15 @@ import { startScorecard } from "@/app/actions";
 export default function EmployeeScorecardPage({ params, searchParams }: { params: { id: string }; searchParams: { period?: string } }) {
   const v = requireViewer();
   const emp = db.employee(params.id);
-  // Same response for "doesn't exist" and "not allowed" — don't leak who exists.
-  if (!emp || !canViewEmployee(v, emp)) notFound();
+  if (!emp) notFound();
 
   const periods = db.periods();
   const period = resolvePeriod(periods, searchParams.period);
   const sc = db.scorecard(emp.id, period.id);
   const metrics = sc ? db.metrics(sc.id) : [];
   const summary = overall(metrics);
-  const canEdit = canEditScorecard(v, emp);
-  const isSelf = v.employee?.id === emp.id;
+  const canEdit = canEditScores(v);
+  const canManage = canManageEmployees(v);
   const dept = db.department(emp.department_id);
   const l1 = db.employee(emp.l1_manager_id);
   const l2 = db.employee(emp.l2_manager_id);
@@ -36,22 +35,16 @@ export default function EmployeeScorecardPage({ params, searchParams }: { params
     return db.user(userId)?.display_name ?? "Unknown";
   };
 
-  const access = v.isAdmin && !isSelf
-    ? { tone: "info" as const, text: "Admin view — you can edit this scorecard and this person's reporting line." }
-    : canEdit
-      ? { tone: "info" as const, text: `You're ${emp.name}'s L1 manager, so you can update these metrics.` }
-      : isSelf
-        ? { tone: "info" as const, text: `This is your scorecard. It's read-only — ${l1 ? `${l1.name} (your L1 manager)` : "your manager"} updates it.` }
-        : null;
+  const access = canEdit
+    ? "You can update this scorecard."
+    : "Scorecards are updated by the Manager or Data team. You can view this one.";
+  const backHref = dept ? `/departments/${dept.slug}` : "/management";
 
-  const backHref = v.isAdmin ? "/employees" : "/my-team";
   const audit = db.audit([emp.id], 12);
 
   return (
     <div className="p-6 md:p-8 max-w-[1200px]">
-      {!isSelf && visibleEmployees(v).length > 1 && (
-        <Link href={backHref} className="text-xs text-muted hover:underline">← {v.isAdmin ? "All employees" : "My team"}</Link>
-      )}
+      <Link href={backHref} className="text-xs text-muted hover:underline">← {dept?.name ?? "Management"}</Link>
 
       {/* Employee */}
       <header className="mt-3 flex flex-col md:flex-row md:items-end gap-6 justify-between">
@@ -59,7 +52,7 @@ export default function EmployeeScorecardPage({ params, searchParams }: { params
           <span className="w-14 h-14 rounded-full bg-sky-bg text-sky-deep text-lg font-semibold grid place-items-center">{initials(emp.name)}</span>
           <div>
             <h1 className="font-serif text-3xl leading-tight">{emp.name}</h1>
-            <div className="text-sm text-muted">{emp.designation || "No designation"} in {dept?.name}</div>
+            <div className="text-sm text-muted">{emp.designation || "No designation"}, {dept?.name ?? "not in a department"}</div>
           </div>
         </div>
         <dl className="grid grid-cols-2 sm:grid-cols-4 gap-x-8 gap-y-2 text-sm">
@@ -70,7 +63,7 @@ export default function EmployeeScorecardPage({ params, searchParams }: { params
         </dl>
       </header>
 
-      {access && <div className="mt-6"><Notice tone={access.tone}>{access.text}</Notice></div>}
+      <div className="mt-6"><Notice tone="info">{access}</Notice></div>
 
       {/* Period switcher */}
       <nav className="mt-8 flex items-center gap-1 border-b border-line" aria-label="Review period">
@@ -86,7 +79,7 @@ export default function EmployeeScorecardPage({ params, searchParams }: { params
         <div className="mt-6 bg-panel border border-line rounded p-8 text-center">
           <div className="font-serif text-lg">No scorecard for {period.label} yet</div>
           <p className="text-sm text-muted mt-1 mb-4">
-            {canEdit ? "Start one — it copies the metrics from the previous period with actuals cleared." : "Their manager hasn't started this period's scorecard."}
+            {canEdit ? "Start one. It copies the metrics from the previous period with actuals cleared." : "The Manager or Data team hasn't started this period's scorecard yet."}
           </p>
           {canEdit && <div className="inline-block"><ActionButton action={startScorecard} tone="primary" fields={{ employee_id: emp.id, period_id: period.id }}>Start {period.label} scorecard</ActionButton></div>}
         </div>
@@ -111,9 +104,9 @@ export default function EmployeeScorecardPage({ params, searchParams }: { params
           </section>
 
           <div className="mt-6 space-y-2">
-            {!summary.weightOk && <Notice>Weightage adds up to {summary.totalWeight}%, not 100%. {canEdit ? "Adjust the weights below." : "Your manager needs to adjust the weights."}</Notice>}
+            {!summary.weightOk && <Notice>Weightage adds up to {summary.totalWeight}%, not 100%. {canEdit ? "Adjust the weights below." : "The Manager or Data team needs to adjust the weights."}</Notice>}
             {hasDemo && <Notice>Some automatic values are <strong>demo data</strong> for testing and are not real. They&apos;re tagged “Demo”.</Notice>}
-            {!dept?.has_real_metrics && <Notice>This department&apos;s KPIs haven&apos;t been signed off by its lead yet.</Notice>}
+            {dept && !dept.has_real_metrics && <Notice>This department&apos;s KPIs haven&apos;t been signed off by its lead yet.</Notice>}
           </div>
 
           {/* Metrics */}
@@ -164,7 +157,7 @@ export default function EmployeeScorecardPage({ params, searchParams }: { params
         </section>
 
         {/* Admin: reporting line + details */}
-        {canManageOrg(v) && (
+        {canManage && (
           <section className="grid grid-cols-1 sm:grid-cols-2 gap-6 bg-panel border border-line rounded p-5">
             <div>
               <h2 className="font-serif text-lg mb-3">Assign managers</h2>

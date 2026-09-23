@@ -4,7 +4,7 @@
 // (5) audit log, (6) revalidate. The UI hiding a button is never the gate.
 import { revalidatePath } from "next/cache";
 import { requireViewer } from "@/lib/auth/session";
-import { assert, canEditScorecard, canManageOrg, canRunSync, PermissionError } from "@/lib/auth/permissions";
+import { assert, canEditScores, canManageEmployees, canRunSync, PermissionError } from "@/lib/auth/permissions";
 import { db, writes } from "@/lib/data/store";
 import { fetchAutomaticValue } from "@/lib/sources";
 import { formatValue } from "@/lib/scoring";
@@ -53,7 +53,7 @@ export async function updateMetric(_: ActionState, f: FormData) {
     const m = db.metric(str(f, "metric_id"));
     assert(!!m, "Metric not found");
     const owner = scorecardOwner(m!.scorecard_id);
-    assert(canEditScorecard(v, owner), `Only ${owner.name}'s manager can edit this scorecard`);
+    assert(canEditScores(v) && !!owner, "Only the Manager or Data team can edit scorecards");
 
     const patch: Partial<ScorecardMetric> = {
       target: num(f, "target", "Target", { min: 0 })!,
@@ -82,7 +82,7 @@ export async function addMetric(_: ActionState, f: FormData) {
     const v = requireViewer();
     const scorecardId = str(f, "scorecard_id");
     const owner = scorecardOwner(scorecardId);
-    assert(canEditScorecard(v, owner), `Only ${owner.name}'s manager can edit this scorecard`);
+    assert(canEditScores(v) && !!owner, "Only the Manager or Data team can edit scorecards");
     const name = str(f, "name");
     assert(name.length > 1, "Give the metric a name");
     const type = str(f, "type") as MetricType;
@@ -108,7 +108,7 @@ export async function removeMetric(_: ActionState, f: FormData) {
     const v = requireViewer();
     const m = db.metric(str(f, "metric_id"));
     assert(!!m, "Metric not found");
-    assert(canEditScorecard(v, scorecardOwner(m!.scorecard_id)));
+    assert(canEditScores(v) && !!scorecardOwner(m!.scorecard_id), "Only the Manager or Data team can edit scorecards");
     writes.removeMetric(v.user.id, m!.id);
     return "Removed";
   });
@@ -119,7 +119,7 @@ export async function startScorecard(_: ActionState, f: FormData) {
     const v = requireViewer();
     const emp = db.employee(str(f, "employee_id"));
     assert(!!emp, "Employee not found");
-    assert(canEditScorecard(v, emp!), `Only ${emp!.name}'s manager can start a scorecard`);
+    assert(canEditScores(v), "Only the Manager or Data team can start a scorecard");
     writes.createScorecard(v.user.id, emp!.id, str(f, "period_id"));
     return "Scorecard started";
   });
@@ -145,7 +145,7 @@ function validateManagers(employeeId: string | null, l1: string | null, l2: stri
 export async function assignManagers(_: ActionState, f: FormData) {
   return run(() => {
     const v = requireViewer();
-    assert(canManageOrg(v), "Only an admin can assign managers");
+    assert(canManageEmployees(v), "Only HR or the Data team can assign managers");
     const emp = db.employee(str(f, "employee_id"));
     assert(!!emp, "Employee not found");
     const l1 = str(f, "l1_manager_id") || null;
@@ -161,13 +161,13 @@ export async function assignManagers(_: ActionState, f: FormData) {
 export async function updateEmployee(_: ActionState, f: FormData) {
   return run(() => {
     const v = requireViewer();
-    assert(canManageOrg(v), "Only an admin can edit employee details");
+    assert(canManageEmployees(v), "Only HR or the Data team can edit employee details");
     const emp = db.employee(str(f, "employee_id"));
     assert(!!emp, "Employee not found");
     const designation = str(f, "designation");
-    const department_id = str(f, "department_id");
+    const department_id = str(f, "department_id") || null;
     const status = str(f, "status") as EmployeeStatus;
-    assert(!!db.department(department_id), "Choose a department");
+    assert(!department_id || !!db.department(department_id), "Department not found");
     assert(["active", "exit", "resigned"].includes(status), "Choose a status");
     writes.updateEmployee(v.user.id, emp!.id, { designation, department_id, status }, `Updated details for ${emp!.name}`);
     return "Details saved";
@@ -177,14 +177,15 @@ export async function updateEmployee(_: ActionState, f: FormData) {
 export async function addEmployee(_: ActionState, f: FormData) {
   return run(() => {
     const v = requireViewer();
-    assert(canManageOrg(v), "Only an admin can add employees");
+    assert(canManageEmployees(v), "Only HR or the Data team can add employees");
     const name = str(f, "name");
-    const employee_no = str(f, "employee_no");
-    const department_id = str(f, "department_id");
     assert(name.length > 1, "Enter a name");
-    assert(!!employee_no, "Enter an employee number");
-    assert(!db.employees().some((e) => e.employee_no.toLowerCase() === employee_no.toLowerCase()), `Employee number ${employee_no} is already in use`);
-    assert(!!db.department(department_id), "Choose a department");
+    const taken = (no: string) => db.employees().some((e) => e.employee_no.toLowerCase() === no.toLowerCase());
+    let employee_no = str(f, "employee_no");
+    if (employee_no) assert(!taken(employee_no), `Employee number ${employee_no} is already in use`);
+    else { let n = db.employees().length + 1; do { employee_no = `EMP-${String(n++).padStart(3, "0")}`; } while (taken(employee_no)); }
+    const department_id = str(f, "department_id") || null;
+    assert(!department_id || !!db.department(department_id), "Department not found");
     const l1 = str(f, "l1_manager_id") || null;
     const l2 = str(f, "l2_manager_id") || null;
     validateManagers(null, l1, l2);
@@ -192,7 +193,71 @@ export async function addEmployee(_: ActionState, f: FormData) {
       name, employee_no, department_id, designation: str(f, "designation"),
       status: "active", l1_manager_id: l1, l2_manager_id: l2,
     });
-    return `${name} added`;
+    return `${name} added${department_id ? ` to ${db.department(department_id)!.name}` : ""}`;
+  });
+}
+
+export async function removeEmployee(_: ActionState, f: FormData) {
+  return run(() => {
+    const v = requireViewer();
+    assert(canManageEmployees(v), "Only HR or the Data team can remove employees");
+    const r = writes.removeEmployee(v.user.id, str(f, "employee_id"));
+    assert(!!r, "Employee not found");
+    return r!.orphaned.length
+      ? `Removed ${r!.name}. ${r!.orphaned.join(", ")} now ${r!.orphaned.length > 1 ? "have" : "has"} no L1 manager`
+      : `Removed ${r!.name}`;
+  });
+}
+
+// Department page dropdown: place an existing employee into this department.
+export async function placeInDepartment(_: ActionState, f: FormData) {
+  return run(() => {
+    const v = requireViewer();
+    assert(canManageEmployees(v), "Only HR or the Data team can move employees");
+    const emp = db.employee(str(f, "employee_id"));
+    assert(!!emp, "Pick an employee");
+    const dept = db.department(str(f, "department_id"));
+    assert(!!dept, "Department not found");
+    const from = db.department(emp!.department_id)?.name;
+    writes.updateEmployee(v.user.id, emp!.id, { department_id: dept!.id },
+      `${emp!.name} moved ${from ? `from ${from} ` : ""}to ${dept!.name}`);
+    return `${emp!.name} added to ${dept!.name}`;
+  });
+}
+
+export async function unplaceFromDepartment(_: ActionState, f: FormData) {
+  return run(() => {
+    const v = requireViewer();
+    assert(canManageEmployees(v), "Only HR or the Data team can move employees");
+    const emp = db.employee(str(f, "employee_id"));
+    assert(!!emp, "Employee not found");
+    writes.updateEmployee(v.user.id, emp!.id, { department_id: null }, `${emp!.name} taken out of ${db.department(emp!.department_id)?.name ?? "department"}`);
+    return `${emp!.name} is now unassigned`;
+  });
+}
+
+// Department page: add one metric to every employee in the department.
+export async function addDepartmentMetric(_: ActionState, f: FormData) {
+  return run(() => {
+    const v = requireViewer();
+    assert(canEditScores(v), "Only the Manager or Data team can add metrics");
+    const dept = db.department(str(f, "department_id"));
+    assert(!!dept, "Department not found");
+    assert(db.employeesIn(dept!.id).length > 0, "Add employees to this department first");
+    const name = str(f, "name");
+    assert(name.length > 1, "Give the metric a name");
+    const type = str(f, "type") as MetricType;
+    assert(type === "manual" || type === "automatic", "Choose Manual or Automatic");
+    const n = writes.addMetricToDepartment(v.user.id, dept!.id, str(f, "period_id"), {
+      name, description: str(f, "description"), type,
+      unit: (str(f, "unit") || "count") as ScorecardMetric["unit"],
+      direction: (str(f, "direction") || "higher_is_better") as MetricDirection,
+      target: num(f, "target", "Target", { min: 0 })!,
+      weight: num(f, "weight", "Weightage", { min: 0, max: 100 })!,
+      actual: null, actual_source: null,
+      source_config: type === "automatic" ? { kind: "redash", query_id: null, value_column: "value" } : null,
+    });
+    return `Added “${name}” to ${n} scorecard${n === 1 ? "" : "s"}`;
   });
 }
 
@@ -200,7 +265,7 @@ export async function addEmployee(_: ActionState, f: FormData) {
 export async function syncAutomatic(_: ActionState, f: FormData) {
   return run(async () => {
     const v = requireViewer();
-    assert(canRunSync(v), "Only an admin can run a data sync");
+    assert(canRunSync(v), "Only the Data team can run a data sync");
     const mode = str(f, "mode") === "demo" ? "demo" : "live";
     const period = db.periods().find((p) => p.id === str(f, "period_id"));
     assert(!!period, "Choose a review period");
@@ -242,7 +307,7 @@ export async function clearDemoValues(_: ActionState) {
 export async function resetPreview(_: ActionState) {
   return run(() => {
     const v = requireViewer();
-    assert(v.isAdmin, "Only an admin can reset preview data");
+    assert(canRunSync(v), "Only the Data team can reset preview data");
     writes.reset();
     return "Preview data reset";
   });

@@ -7,6 +7,7 @@
 
 | Version | Date | What changed |
 |---|---|---|
+| v0.4 | 2026-09-23 | Logins reduced to 3 roles (HR, Manager, Data team); employees are data only. New Management tab (HR + Data) to add/remove employees and set department. Every department page: "Add employee" dropdown from the employee list, and "Add metric to everyone in this department". Overview page of all departments. Manager's team-only view removed (one Manager login can't be scoped to a team). |
 | v0.3 | 2026-09-23 | Employees section, L1/L2 manager hierarchy with admin "Assign managers", per-employee scorecards (manual vs automatic metrics, target/actual/weight/score/weighted/status/period/last updated/by), Manager view (self + direct reports only), Admin/Manager/Employee permissions enforced server-side, audit log, Data sources page (Redash connector + clearly-tagged demo values), BI / Data team seeded. |
 | v0.2 | 2026-09-23 | Supabase removed for now. Preview mode: sample data, demo role picker on login (cookie session). |
 | v0.1 | 2026-09-15 | Initial scaffold: schema, RLS, auth, one live department page, Redash proxy stub, manager/HR/data role shells |
@@ -26,32 +27,35 @@ src/lib/sources/index.ts     ← automatic-metric connectors (Redash, demo)
 src/app/actions.ts           ← all writes: auth → permission → validate → write → audit
 ```
 
-**Roles.** Only `is_admin` is stored. "Manager" is derived — anyone with at least one direct report — so it can't drift from the org chart.
+**Logins.** Exactly three: HR, Manager, Data team. Employees (Ronak, Sujal, Aditya, Dhanesh, plus anyone added) are records, not logins.
 
-| | Admin | Manager | Employee |
+| | HR | Manager | Data team |
 |---|---|---|---|
-| See all departments / employees | Yes | No | No |
-| See own scorecard | Yes | Yes | Yes |
-| See direct reports' scorecards | Yes (everyone) | Yes (L1 reports only) | No |
-| Edit a scorecard | Any | Direct reports only | Never, including own |
-| Add employee, assign L1/L2, edit details | Yes | No | No |
-| Run data sync, demo values, reset | Yes | No | No |
+| View every department and scorecard | Yes | Yes | Yes |
+| Management tab: add / remove employees, set department, L1 / L2, designation | Yes | No | Yes |
+| Department page: "Add employee" dropdown, "Remove from department" | Yes | No | Yes |
+| Add metrics (department-wide or per person), edit targets / actuals / weights | No | Yes | Yes |
+| Data sources, demo values, reset preview | No | No | Yes |
 
-A person the viewer can't see returns "not found" (not "forbidden") so nobody can discover who exists.
+All rules live in `src/lib/auth/permissions.ts` (three one-line functions) and are enforced on the server for every action.
 
 **Decisions made (change if wrong)**
-- L2 managers get **no** visibility of skip-level reports. The spec says "directly report"; flip one line in `canViewEmployee` if L2 should see them.
-- Nobody edits their own metrics, including managers. An admin edits the admin's own scorecard.
-- Score = achievement vs target, **capped at 100**, linear. Lower-is-better metrics invert. Overall = weighted average of metrics **that have data**; coverage % is shown next to it.
-- Status bands: ≥100 Achieved, ≥90 On track, ≥70 In progress, below Behind. Empty manual = Not started, empty automatic = Awaiting data.
-- Review cycle is quarterly (Jul–Sep 2026, Oct–Dec 2026). A new period's scorecard copies the last one's metrics with actuals cleared.
-- Hierarchy is proposed for testing: Head of Data (sample) → Ronak → Sujal, Aditya; Aditya → Dhanesh. Designations and targets are placeholders.
+- HR can't edit scores. This keeps the v0.1 rule "HR changes status, managers own scores". Flip `canEditScores` to add HR.
+- The single Manager login sees and edits every department. With one shared Manager login, there's no way to limit it to one team. Per-manager scoping needs one login per manager, which comes with Supabase sign-in.
+- L1 / L2 managers are chosen from the employee list and shown on each scorecard. They're informational for now and don't control access.
+- "Add metric" on a department page adds that metric to every employee in the department for the selected period. To add a metric to one person, use their scorecard.
+- Deleting an employee also deletes their scorecards and clears them as anyone's L1 / L2 (the app says who was affected). "Remove from department" only unassigns them and keeps their scorecard.
+- Employee number is auto-generated (EMP-00X) if left blank.
+- Score = achievement vs target, capped at 100, linear. Overall = weighted average of metrics that have data; coverage % is shown beside it.
+- Status bands: ≥100 Achieved, ≥90 On track, ≥70 In progress, below that Behind.
+- Review cycle is quarterly.
+- Seed hierarchy: Ronak → Sujal, Aditya; Aditya → Dhanesh (L2 Ronak). Designations and targets are placeholders.
 
 **Automatic metrics.** They start empty. A live sync only fills metrics that have `source_config.query_id` set and Redash credentials on the server. The query must return `employee_no, period_id, value`. Demo values exist only when an admin clicks "Fill with demo values", are stored as `actual_source = 'demo'`, and are tagged "Demo" everywhere.
 
 **Preview storage.** JSON file at `.data/preview-store.json` (gitignored), or `/tmp` on Vercel. On Vercel it can reset at any time. Fine for testing, not for real reviews.
 
-**Tested (v0.3).** 45-cell page-access matrix (5 people × 9 pages) matches the table above. Direct server requests bypassing the UI: an employee editing their own metrics, a peer, and a report editing their manager are all rejected; the L1 manager's edit is saved and audited; a reporting loop is rejected; a manager reassigning managers is rejected; reassigning Dhanesh moves access immediately.
+**Tested (v0.4).** 3 logins × 5 pages access check. Server-side, bypassing the UI: HR adds an employee to F&B (ok), Manager adds an employee (blocked), Data moves Dhanesh into F&B via the dropdown (ok), Manager adds a department metric to 2 scorecards (ok), HR adds a metric (blocked), Manager deletes an employee (blocked), HR deletes Aditya (ok; Dhanesh flagged as having no L1), HR assigns managers (ok). Old per-employee logins are rejected.
 
 ---
 
@@ -61,7 +65,7 @@ A person the viewer can't see returns "not found" (not "forbidden") so nobody ca
 1. Reconcile with `0001_init.sql` (v2 replaces `people`/`profiles`/`scores`), then turn the draft into migration `0003`.
 2. Re-implement the functions in `src/lib/data/store.ts` with Supabase queries — same names, same return types.
 3. In `src/lib/auth/session.ts`, replace the cookie lookup with `supabase.auth.getUser()` → `app_users`.
-4. Replace the login picker with email/magic-link sign-in.
+4. Replace the login picker with email/magic-link sign-in; map each account to a role in `app_users`.
 5. Keep `permissions.ts` checks in server actions even with RLS on. Two layers on purpose.
 
 Pages and components should need no changes.
@@ -89,7 +93,8 @@ Pages and components should need no changes.
 
 **Decisions for the business**
 - [ ] Confirm the BI hierarchy (who is Ronak's L1, and does Dhanesh report to Aditya or Ronak?)
-- [ ] Confirm L2 managers should NOT see skip-level scorecards
+- [ ] Confirm HR should not edit scores
+- [ ] Decide if managers should later get their own logins scoped to their team
 - [ ] Sign off BI metrics, targets and weights (current ones are proposals)
 - [ ] Confirm scoring: capped-at-100 linear vs HR banding (1–5)
 - [ ] Confirm review cycle: quarterly vs monthly

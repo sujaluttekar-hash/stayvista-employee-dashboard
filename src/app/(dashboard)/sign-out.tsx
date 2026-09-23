@@ -8,7 +8,7 @@ export default function SignOut() {
       className="underline mt-1"
       onClick={async () => { await fetch("/api/auth", { method: "DELETE" }); router.push("/login"); router.refresh(); }}
     >
-      Switch person
+      Switch login
     </button>
   );
 }
