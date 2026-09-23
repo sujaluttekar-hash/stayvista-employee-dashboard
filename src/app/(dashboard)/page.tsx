@@ -1,7 +1,7 @@
-import { getCurrentProfile } from "@/lib/profile";
+import { getCurrentProfile } from "@/lib/session";
 
 export default async function DashboardHome() {
-  const profile = await getCurrentProfile();
+  const profile = getCurrentProfile();
 
   return (
     <div className="p-8">

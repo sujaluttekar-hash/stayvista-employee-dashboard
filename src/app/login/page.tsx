@@ -1,58 +1,53 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
+
+const OPTIONS = [
+  { id: "u-manager", label: "Manager", hint: "Sees and edits own team only" },
+  { id: "u-hr", label: "HR", hint: "Org-wide roster, status only" },
+  { id: "u-data", label: "Data", hint: "Runs Redash syncs" },
+];
 
 export default function LoginPage() {
   const router = useRouter();
-  const supabase = createClient();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
 
-  async function handleLogin(e: React.FormEvent) {
-    e.preventDefault();
-    setLoading(true);
-    setError(null);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    setLoading(false);
-    if (error) { setError(error.message); return; }
-    router.push("/");
-    router.refresh();
+  async function signIn(userId: string) {
+    setLoading(userId); setError(null);
+    const res = await fetch("/api/auth", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId }),
+    });
+    setLoading(null);
+    if (!res.ok) { setError("Could not sign in"); return; }
+    router.push("/"); router.refresh();
   }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-warmwhite">
-      <form onSubmit={handleLogin} className="w-full max-w-sm bg-panel border border-line rounded p-8">
+      <div className="w-full max-w-sm bg-panel border border-line rounded p-8">
         <div className="font-serif text-2xl mb-1">Employee Dashboard</div>
-        <div className="text-xs uppercase tracking-wide text-muted mb-6">StayVista</div>
+        <div className="text-xs uppercase tracking-wide text-muted mb-6">StayVista · Preview mode</div>
 
-        <label className="block text-xs text-muted mb-1">Email</label>
-        <input
-          className="w-full border border-line rounded px-3 py-2 mb-4 text-sm"
-          type="email" value={email} onChange={(e) => setEmail(e.target.value)} required
-        />
-        <label className="block text-xs text-muted mb-1">Password</label>
-        <input
-          className="w-full border border-line rounded px-3 py-2 mb-4 text-sm"
-          type="password" value={password} onChange={(e) => setPassword(e.target.value)} required
-        />
+        <div className="text-xs text-muted mb-3">Choose a view to preview:</div>
+        {OPTIONS.map((o) => (
+          <button
+            key={o.id} onClick={() => signIn(o.id)} disabled={!!loading}
+            className="w-full text-left border border-line rounded px-4 py-3 mb-2 hover:bg-bloom-bg disabled:opacity-50"
+          >
+            <div className="text-sm font-medium">{loading === o.id ? "Opening…" : o.label}</div>
+            <div className="text-[11px] text-muted">{o.hint}</div>
+          </button>
+        ))}
 
-        {error && <div className="text-bad text-xs mb-4">{error}</div>}
-
-        <button
-          type="submit" disabled={loading}
-          className="w-full bg-bloom text-ink font-medium rounded py-2 text-sm"
-        >
-          {loading ? "Signing in…" : "Sign in"}
-        </button>
+        {error && <div className="text-bad text-xs mt-2">{error}</div>}
 
         <div className="text-[11px] text-muted mt-4 leading-relaxed">
-          Accounts are provisioned by HR. Your role (Manager / HR / Data) is
-          set on your profile and determines what you can see and edit.
+          Preview mode uses sample data. Real sign-in returns when the
+          database is connected.
         </div>
-      </form>
+      </div>
     </div>
   );
 }

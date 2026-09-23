@@ -7,9 +7,21 @@
 
 | Version | Date | What changed |
 |---|---|---|
+| v0.2 | 2026-09-23 | Supabase removed for now. Replaced with preview mode: sample data (`src/lib/mock-data.ts`), demo role picker on login (cookie session), manager score edits saved in browser only, Redash sync fetches but doesn't store. Build passing. |
 | v0.1 | 2026-09-15 | Initial scaffold: schema, RLS, auth, one live department page, Redash proxy stub, manager/HR/data role shells |
 
 ---
+
+## Preview mode (v0.2) — read this first
+
+Supabase is temporarily removed. To bring it back:
+1. `npm install @supabase/ssr @supabase/supabase-js`
+2. Restore `src/lib/supabase/*` and `src/lib/profile.ts` from commit `6ae8ed0`
+3. Swap `getCurrentProfile()` in `src/lib/session.ts` and `visiblePeople()` in `src/lib/mock-data.ts` back to Supabase queries
+4. Restore the `scores` upsert in `my-team/editor.tsx` and the write path in `/api/redash/sync`
+5. Delete `src/lib/mock-data.ts`; run `supabase/migrations/*` (kept untouched)
+
+Until then: login is NOT secure (anyone can pick any role), and all people are SAMPLE rows.
 
 ## What's real vs. stubbed right now
 

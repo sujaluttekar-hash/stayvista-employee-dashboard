@@ -1,60 +1,26 @@
-import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-// Routes that require a specific role beyond "logged in".
-// Everything else under /(dashboard) just requires *any* authenticated
-// session — the actual data scoping (own team vs. org-wide) happens in
-// Postgres via RLS, not here. This layer only stops the wrong ROLE from
-// even loading a page shell it has no business seeing.
+// Temporary: demo-cookie gating while Supabase is removed.
+// Role -> route gating is kept identical to the Supabase version.
+const SESSION_COOKIE = "sv_demo_session";
+const ROLE_BY_USER: Record<string, string> = { "u-manager": "manager", "u-hr": "hr", "u-data": "data" };
 const ROLE_GATED: { prefix: string; roles: string[] }[] = [
   { prefix: "/hr", roles: ["hr"] },
   { prefix: "/data", roles: ["data"] },
   { prefix: "/my-team", roles: ["manager"] },
 ];
 
-export async function middleware(request: NextRequest) {
-  let response = NextResponse.next({ request: { headers: request.headers } });
-
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        get(name: string) {
-          return request.cookies.get(name)?.value;
-        },
-        set(name: string, value: string, options: CookieOptions) {
-          response.cookies.set({ name, value, ...options });
-        },
-        remove(name: string, options: CookieOptions) {
-          response.cookies.set({ name, value: "", ...options });
-        },
-      },
-    }
-  );
-
-  const { data: { user } } = await supabase.auth.getUser();
+export function middleware(request: NextRequest) {
   const path = request.nextUrl.pathname;
+  if (path === "/login" || path.startsWith("/api/auth")) return NextResponse.next();
 
-  if (!user && path !== "/login") {
-    return NextResponse.redirect(new URL("/login", request.url));
-  }
+  const role = ROLE_BY_USER[request.cookies.get(SESSION_COOKIE)?.value ?? ""];
+  if (!role) return NextResponse.redirect(new URL("/login", request.url));
 
-  if (user) {
-    const gate = ROLE_GATED.find((g) => path.startsWith(g.prefix));
-    if (gate) {
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("role")
-        .eq("id", user.id)
-        .single();
-      if (!profile || !gate.roles.includes(profile.role)) {
-        return NextResponse.redirect(new URL("/", request.url));
-      }
-    }
-  }
+  const gate = ROLE_GATED.find((g) => path.startsWith(g.prefix));
+  if (gate && !gate.roles.includes(role)) return NextResponse.redirect(new URL("/", request.url));
 
-  return response;
+  return NextResponse.next();
 }
 
 export const config = {

@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getCurrentProfile } from "@/lib/profile";
+import { getCurrentProfile } from "@/lib/session";
 import { DEPARTMENTS } from "@/lib/departments";
+import SignOut from "./sign-out";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const profile = await getCurrentProfile();
+  const profile = getCurrentProfile();
   if (!profile) redirect("/login");
 
   return (
@@ -52,6 +53,8 @@ export default async function DashboardLayout({ children }: { children: React.Re
           {profile.full_name}
           <br />
           <span className="capitalize">{profile.role}</span> view
+          <br />
+          <SignOut />
         </div>
       </aside>
 
