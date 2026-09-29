@@ -7,8 +7,8 @@ import { EmployeeTable } from "@/components/employee-table";
 import { AddMetricForm, PlaceEmployeeForm } from "@/components/org-forms";
 import { Notice } from "@/components/ui";
 
-export default function DepartmentPage({ params, searchParams }: { params: { slug: string }; searchParams: { period?: string } }) {
-  const v = requireViewer();
+export default async function DepartmentPage({ params, searchParams }: { params: { slug: string }; searchParams: { period?: string } }) {
+  const v = await requireViewer();
   const dept = db.departmentBySlug(params.slug);
   if (!dept) notFound();
   const period = resolvePeriod(db.periods(), searchParams.period);

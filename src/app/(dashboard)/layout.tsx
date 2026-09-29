@@ -9,8 +9,8 @@ const section = "text-[11px] text-[#A79C8A] px-3 pt-5 pb-1.5";
 
 const ROLE_LABEL = { hr: "HR", manager: "Manager", data: "Data team" };
 
-export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const v = requireViewer();
+export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
+  const v = await requireViewer();
   const departments = db.departments();
   const staffed = new Set(db.employees().map((e) => e.department_id));
 

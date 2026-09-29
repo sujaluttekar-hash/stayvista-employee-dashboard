@@ -14,8 +14,8 @@ const WHAT_YOU_CAN_DO = {
   data: "You have full access: employees, scorecards and data sources.",
 };
 
-export default function Overview() {
-  const v = requireViewer();
+export default async function Overview() {
+  const v = await requireViewer();
   const period = currentPeriod(db.periods());
   const departments = db.departments();
 

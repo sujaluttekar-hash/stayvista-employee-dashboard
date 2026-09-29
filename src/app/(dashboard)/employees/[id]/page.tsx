@@ -11,8 +11,8 @@ import { ActionButton } from "@/components/forms";
 import { Notice, initials, scoreTone } from "@/components/ui";
 import { startScorecard } from "@/app/actions";
 
-export default function EmployeeScorecardPage({ params, searchParams }: { params: { id: string }; searchParams: { period?: string } }) {
-  const v = requireViewer();
+export default async function EmployeeScorecardPage({ params, searchParams }: { params: { id: string }; searchParams: { period?: string } }) {
+  const v = await requireViewer();
   const emp = db.employee(params.id);
   if (!emp) notFound();
 

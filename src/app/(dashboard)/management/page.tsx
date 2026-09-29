@@ -6,10 +6,11 @@ import { db } from "@/lib/data/store";
 import { resolvePeriod } from "@/lib/periods";
 import { EmployeeTable } from "@/components/employee-table";
 import { AddEmployeeForm } from "@/components/org-forms";
+import { LoginsManager } from "@/components/logins-manager";
 
 // HR + Data only. The master employee list: add, remove, set department.
-export default function ManagementPage({ searchParams }: { searchParams: { dept?: string; period?: string } }) {
-  const v = requireViewer();
+export default async function ManagementPage({ searchParams }: { searchParams: { dept?: string; period?: string } }) {
+  const v = await requireViewer();
   if (!canManageEmployees(v)) notFound();
 
   const period = resolvePeriod(db.periods(), searchParams.period);
@@ -28,7 +29,9 @@ export default function ManagementPage({ searchParams }: { searchParams: { dept?
         The employee list for the whole company. People added here appear in each department&apos;s &ldquo;Add employee&rdquo; dropdown and as L1 / L2 manager options. Only HR and the Data team can see this page.
       </p>
 
-      <div className="mt-6"><AddEmployeeForm
+      <div className="mt-6"><LoginsManager /></div>
+
+      <div className="mt-8"><AddEmployeeForm
         departments={departments.map((d) => ({ id: d.id, name: d.name }))}
         people={all.filter((e) => e.status === "active").map((e) => ({ id: e.id, name: e.name, l1: e.l1_manager_id }))} /></div>
 

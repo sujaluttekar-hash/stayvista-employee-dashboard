@@ -9,8 +9,8 @@ import { ActionButton } from "@/components/forms";
 import { Notice } from "@/components/ui";
 import { clearDemoValues, resetPreview, syncAutomatic } from "@/app/actions";
 
-export default function DataSourcesPage() {
-  const v = requireViewer();
+export default async function DataSourcesPage() {
+  const v = await requireViewer();
   if (!canRunSync(v)) notFound();
   const period = currentPeriod(db.periods());
   const auto = db.scorecards().filter((s) => s.period_id === period.id).flatMap((sc) =>

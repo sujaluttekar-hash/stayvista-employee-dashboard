@@ -48,8 +48,8 @@ function scorecardOwner(scorecardId: string) {
 
 // ── Metrics ──────────────────────────────────────────────────────────
 export async function updateMetric(_: ActionState, f: FormData) {
-  return run(() => {
-    const v = requireViewer();
+  return run(async () => {
+    const v = await requireViewer();
     const m = db.metric(str(f, "metric_id"));
     assert(!!m, "Metric not found");
     const owner = scorecardOwner(m!.scorecard_id);
@@ -78,8 +78,8 @@ export async function updateMetric(_: ActionState, f: FormData) {
 }
 
 export async function addMetric(_: ActionState, f: FormData) {
-  return run(() => {
-    const v = requireViewer();
+  return run(async () => {
+    const v = await requireViewer();
     const scorecardId = str(f, "scorecard_id");
     const owner = scorecardOwner(scorecardId);
     assert(canEditScores(v) && !!owner, "Only the Manager or Data team can edit scorecards");
@@ -104,8 +104,8 @@ export async function addMetric(_: ActionState, f: FormData) {
 }
 
 export async function removeMetric(_: ActionState, f: FormData) {
-  return run(() => {
-    const v = requireViewer();
+  return run(async () => {
+    const v = await requireViewer();
     const m = db.metric(str(f, "metric_id"));
     assert(!!m, "Metric not found");
     assert(canEditScores(v) && !!scorecardOwner(m!.scorecard_id), "Only the Manager or Data team can edit scorecards");
@@ -115,8 +115,8 @@ export async function removeMetric(_: ActionState, f: FormData) {
 }
 
 export async function startScorecard(_: ActionState, f: FormData) {
-  return run(() => {
-    const v = requireViewer();
+  return run(async () => {
+    const v = await requireViewer();
     const emp = db.employee(str(f, "employee_id"));
     assert(!!emp, "Employee not found");
     assert(canEditScores(v), "Only the Manager or Data team can start a scorecard");
@@ -143,8 +143,8 @@ function validateManagers(employeeId: string | null, l1: string | null, l2: stri
 }
 
 export async function assignManagers(_: ActionState, f: FormData) {
-  return run(() => {
-    const v = requireViewer();
+  return run(async () => {
+    const v = await requireViewer();
     assert(canManageEmployees(v), "Only HR or the Data team can assign managers");
     const emp = db.employee(str(f, "employee_id"));
     assert(!!emp, "Employee not found");
@@ -159,8 +159,8 @@ export async function assignManagers(_: ActionState, f: FormData) {
 }
 
 export async function updateEmployee(_: ActionState, f: FormData) {
-  return run(() => {
-    const v = requireViewer();
+  return run(async () => {
+    const v = await requireViewer();
     assert(canManageEmployees(v), "Only HR or the Data team can edit employee details");
     const emp = db.employee(str(f, "employee_id"));
     assert(!!emp, "Employee not found");
@@ -175,8 +175,8 @@ export async function updateEmployee(_: ActionState, f: FormData) {
 }
 
 export async function addEmployee(_: ActionState, f: FormData) {
-  return run(() => {
-    const v = requireViewer();
+  return run(async () => {
+    const v = await requireViewer();
     assert(canManageEmployees(v), "Only HR or the Data team can add employees");
     const name = str(f, "name");
     assert(name.length > 1, "Enter a name");
@@ -198,8 +198,8 @@ export async function addEmployee(_: ActionState, f: FormData) {
 }
 
 export async function removeEmployee(_: ActionState, f: FormData) {
-  return run(() => {
-    const v = requireViewer();
+  return run(async () => {
+    const v = await requireViewer();
     assert(canManageEmployees(v), "Only HR or the Data team can remove employees");
     const r = writes.removeEmployee(v.user.id, str(f, "employee_id"));
     assert(!!r, "Employee not found");
@@ -211,8 +211,8 @@ export async function removeEmployee(_: ActionState, f: FormData) {
 
 // Department page dropdown: place an existing employee into this department.
 export async function placeInDepartment(_: ActionState, f: FormData) {
-  return run(() => {
-    const v = requireViewer();
+  return run(async () => {
+    const v = await requireViewer();
     assert(canManageEmployees(v), "Only HR or the Data team can move employees");
     const emp = db.employee(str(f, "employee_id"));
     assert(!!emp, "Pick an employee");
@@ -226,8 +226,8 @@ export async function placeInDepartment(_: ActionState, f: FormData) {
 }
 
 export async function unplaceFromDepartment(_: ActionState, f: FormData) {
-  return run(() => {
-    const v = requireViewer();
+  return run(async () => {
+    const v = await requireViewer();
     assert(canManageEmployees(v), "Only HR or the Data team can move employees");
     const emp = db.employee(str(f, "employee_id"));
     assert(!!emp, "Employee not found");
@@ -238,8 +238,8 @@ export async function unplaceFromDepartment(_: ActionState, f: FormData) {
 
 // Department page: add one metric to every employee in the department.
 export async function addDepartmentMetric(_: ActionState, f: FormData) {
-  return run(() => {
-    const v = requireViewer();
+  return run(async () => {
+    const v = await requireViewer();
     assert(canEditScores(v), "Only the Manager or Data team can add metrics");
     const dept = db.department(str(f, "department_id"));
     assert(!!dept, "Department not found");
@@ -264,7 +264,7 @@ export async function addDepartmentMetric(_: ActionState, f: FormData) {
 // ── Automatic data (admin only) ──────────────────────────────────────
 export async function syncAutomatic(_: ActionState, f: FormData) {
   return run(async () => {
-    const v = requireViewer();
+    const v = await requireViewer();
     assert(canRunSync(v), "Only the Data team can run a data sync");
     const mode = str(f, "mode") === "demo" ? "demo" : "live";
     const period = db.periods().find((p) => p.id === str(f, "period_id"));
@@ -291,8 +291,8 @@ export async function syncAutomatic(_: ActionState, f: FormData) {
 }
 
 export async function clearDemoValues(_: ActionState) {
-  return run(() => {
-    const v = requireViewer();
+  return run(async () => {
+    const v = await requireViewer();
     assert(canRunSync(v));
     let n = 0;
     for (const sc of db.scorecards())
@@ -305,8 +305,8 @@ export async function clearDemoValues(_: ActionState) {
 }
 
 export async function resetPreview(_: ActionState) {
-  return run(() => {
-    const v = requireViewer();
+  return run(async () => {
+    const v = await requireViewer();
     assert(canRunSync(v), "Only the Data team can reset preview data");
     writes.reset();
     return "Preview data reset";
