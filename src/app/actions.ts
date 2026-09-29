@@ -72,7 +72,7 @@ export async function updateMetric(_: ActionState, f: FormData) {
       }
     }
     if (!changes.length) return "No changes";
-    writes.updateMetric(v.user.id, m!.id, patch, `${m!.name}: ${changes.join(", ")}`);
+    await writes.updateMetric(v.user.id, m!.id, patch, `${m!.name}: ${changes.join(", ")}`);
     return "Saved";
   });
 }
@@ -87,7 +87,7 @@ export async function addMetric(_: ActionState, f: FormData) {
     assert(name.length > 1, "Give the metric a name");
     const type = str(f, "type") as MetricType;
     assert(type === "manual" || type === "automatic", "Choose Manual or Automatic");
-    writes.addMetric(v.user.id, scorecardId, {
+    await writes.addMetric(v.user.id, scorecardId, {
       name,
       description: str(f, "description"),
       type,
@@ -109,7 +109,7 @@ export async function removeMetric(_: ActionState, f: FormData) {
     const m = db.metric(str(f, "metric_id"));
     assert(!!m, "Metric not found");
     assert(canEditScores(v) && !!scorecardOwner(m!.scorecard_id), "Only the Manager or Data team can edit scorecards");
-    writes.removeMetric(v.user.id, m!.id);
+    await writes.removeMetric(v.user.id, m!.id);
     return "Removed";
   });
 }
@@ -120,7 +120,7 @@ export async function startScorecard(_: ActionState, f: FormData) {
     const emp = db.employee(str(f, "employee_id"));
     assert(!!emp, "Employee not found");
     assert(canEditScores(v), "Only the Manager or Data team can start a scorecard");
-    writes.createScorecard(v.user.id, emp!.id, str(f, "period_id"));
+    await writes.createScorecard(v.user.id, emp!.id, str(f, "period_id"));
     return "Scorecard started";
   });
 }
@@ -152,7 +152,7 @@ export async function assignManagers(_: ActionState, f: FormData) {
     const l2 = str(f, "l2_manager_id") || null;
     validateManagers(emp!.id, l1, l2);
     const name = (id: string | null) => db.employee(id)?.name ?? "none";
-    writes.updateEmployee(v.user.id, emp!.id, { l1_manager_id: l1, l2_manager_id: l2 },
+    await writes.updateEmployee(v.user.id, emp!.id, { l1_manager_id: l1, l2_manager_id: l2 },
       `Managers for ${emp!.name}: L1 ${name(l1)}, L2 ${name(l2)}`);
     return "Managers updated";
   });
@@ -169,7 +169,7 @@ export async function updateEmployee(_: ActionState, f: FormData) {
     const status = str(f, "status") as EmployeeStatus;
     assert(!department_id || !!db.department(department_id), "Department not found");
     assert(["active", "exit", "resigned"].includes(status), "Choose a status");
-    writes.updateEmployee(v.user.id, emp!.id, { designation, department_id, status }, `Updated details for ${emp!.name}`);
+    await writes.updateEmployee(v.user.id, emp!.id, { designation, department_id, status }, `Updated details for ${emp!.name}`);
     return "Details saved";
   });
 }
@@ -189,7 +189,7 @@ export async function addEmployee(_: ActionState, f: FormData) {
     const l1 = str(f, "l1_manager_id") || null;
     const l2 = str(f, "l2_manager_id") || null;
     validateManagers(null, l1, l2);
-    writes.addEmployee(v.user.id, {
+    await writes.addEmployee(v.user.id, {
       name, employee_no, department_id, designation: str(f, "designation"),
       status: "active", l1_manager_id: l1, l2_manager_id: l2,
     });
@@ -201,7 +201,7 @@ export async function removeEmployee(_: ActionState, f: FormData) {
   return run(async () => {
     const v = await requireViewer();
     assert(canManageEmployees(v), "Only HR or the Data team can remove employees");
-    const r = writes.removeEmployee(v.user.id, str(f, "employee_id"));
+    const r = await writes.removeEmployee(v.user.id, str(f, "employee_id"));
     assert(!!r, "Employee not found");
     return r!.orphaned.length
       ? `Removed ${r!.name}. ${r!.orphaned.join(", ")} now ${r!.orphaned.length > 1 ? "have" : "has"} no L1 manager`
@@ -219,7 +219,7 @@ export async function placeInDepartment(_: ActionState, f: FormData) {
     const dept = db.department(str(f, "department_id"));
     assert(!!dept, "Department not found");
     const from = db.department(emp!.department_id)?.name;
-    writes.updateEmployee(v.user.id, emp!.id, { department_id: dept!.id },
+    await writes.updateEmployee(v.user.id, emp!.id, { department_id: dept!.id },
       `${emp!.name} moved ${from ? `from ${from} ` : ""}to ${dept!.name}`);
     return `${emp!.name} added to ${dept!.name}`;
   });
@@ -231,7 +231,7 @@ export async function unplaceFromDepartment(_: ActionState, f: FormData) {
     assert(canManageEmployees(v), "Only HR or the Data team can move employees");
     const emp = db.employee(str(f, "employee_id"));
     assert(!!emp, "Employee not found");
-    writes.updateEmployee(v.user.id, emp!.id, { department_id: null }, `${emp!.name} taken out of ${db.department(emp!.department_id)?.name ?? "department"}`);
+    await writes.updateEmployee(v.user.id, emp!.id, { department_id: null }, `${emp!.name} taken out of ${db.department(emp!.department_id)?.name ?? "department"}`);
     return `${emp!.name} is now unassigned`;
   });
 }
@@ -248,7 +248,7 @@ export async function addDepartmentMetric(_: ActionState, f: FormData) {
     assert(name.length > 1, "Give the metric a name");
     const type = str(f, "type") as MetricType;
     assert(type === "manual" || type === "automatic", "Choose Manual or Automatic");
-    const n = writes.addMetricToDepartment(v.user.id, dept!.id, str(f, "period_id"), {
+    const n = await writes.addMetricToDepartment(v.user.id, dept!.id, str(f, "period_id"), {
       name, description: str(f, "description"), type,
       unit: (str(f, "unit") || "count") as ScorecardMetric["unit"],
       direction: (str(f, "direction") || "higher_is_better") as MetricDirection,
@@ -277,7 +277,7 @@ export async function syncAutomatic(_: ActionState, f: FormData) {
       for (const m of db.metrics(sc.id).filter((x) => x.type === "automatic")) {
         const r = await fetchAutomaticValue(m, emp, period!, mode);
         if (r.ok) {
-          writes.updateMetric(v.user.id, m.id, { actual: r.value, actual_source: r.source },
+          await writes.updateMetric(v.user.id, m.id, { actual: r.value, actual_source: r.source },
             `${m.name}: ${r.source === "demo" ? "DEMO value" : "synced from Redash"} ${formatValue(r.value, m.unit)}`);
           filled++;
         } else skipped.push(r.reason);
@@ -297,7 +297,7 @@ export async function clearDemoValues(_: ActionState) {
     let n = 0;
     for (const sc of db.scorecards())
       for (const m of db.metrics(sc.id).filter((x) => x.actual_source === "demo")) {
-        writes.updateMetric(v.user.id, m.id, { actual: null, actual_source: null }, `${m.name}: demo value cleared`);
+        await writes.updateMetric(v.user.id, m.id, { actual: null, actual_source: null }, `${m.name}: demo value cleared`);
         n++;
       }
     return `Cleared ${n} demo values`;
@@ -308,7 +308,7 @@ export async function resetPreview(_: ActionState) {
   return run(async () => {
     const v = await requireViewer();
     assert(canRunSync(v), "Only the Data team can reset preview data");
-    writes.reset();
+    await writes.reset();
     return "Preview data reset";
   });
 }

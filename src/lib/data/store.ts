@@ -1,18 +1,31 @@
 import "server-only";
 // ─────────────────────────────────────────────────────────────────────
-// PREVIEW REPOSITORY. Every read/write in the app goes through this file.
-// Swapping to Supabase later = re-implement these functions with queries;
-// no page or permission code needs to change.
+// Reads: still the local JSON/in-memory store (fast, synchronous — every
+// page in the app calls db.* without awaiting).
 //
-// Storage: a JSON file (.data/preview-store.json locally, /tmp on
-// Vercel). On Vercel, /tmp is per-instance and can reset at any time —
-// fine for a demo, not for real data.
+// Writes: every writes.* function below mutates the local store AND
+// writes the same change to the real Supabase tables (departments,
+// employees, app_users, scorecards, scorecard_metrics, audit_log),
+// using the service-role key so it isn't blocked by RLS — the caller's
+// role has already been checked in src/app/actions.ts before any
+// writes.* function runs. If the Supabase write fails, the whole action
+// fails (the local change is NOT kept), so the two stores can't drift
+// apart silently.
 // ─────────────────────────────────────────────────────────────────────
 import fs from "fs";
 import os from "os";
 import path from "path";
 import type { Store, Employee, ScorecardMetric, AuditEntry, Scorecard } from "./types";
 import { buildSeed, STORE_VERSION } from "./seed";
+import { createAdminClient } from "@/lib/supabase/server";
+
+function sb() {
+  return createAdminClient();
+}
+function must<T>(label: string, result: { data: T; error: any }): T {
+  if (result.error) throw new Error(`Supabase write failed (${label}): ${result.error.message}`);
+  return result.data;
+}
 
 function storePath() {
   if (process.env.PREVIEW_STORE_PATH) return process.env.PREVIEW_STORE_PATH;
@@ -90,7 +103,9 @@ function log(s: Store, entry: Omit<AuditEntry, "id" | "at">) {
 }
 
 export const writes = {
-  updateEmployee(actorId: string, id: string, patch: Partial<Omit<Employee, "id">>, summary: string) {
+  async updateEmployee(actorId: string, id: string, patch: Partial<Omit<Employee, "id">>, summary: string) {
+    await must("employees.update", await sb().from("employees").update(patch).eq("id", id));
+    await must("audit_log.insert", await sb().from("audit_log").insert({ actor_id: safeActor(actorId), action: "employee.update", entity_id: id, summary }));
     return mutate((s) => {
       const e = s.employees.find((x) => x.id === id);
       if (!e) throw new Error("Employee not found");
@@ -100,9 +115,11 @@ export const writes = {
     });
   },
 
-  addEmployee(actorId: string, data: Omit<Employee, "id">) {
+  async addEmployee(actorId: string, data: Omit<Employee, "id">) {
+    const row = must("employees.insert", await sb().from("employees").insert(data).select().single());
+    await must("audit_log.insert", await sb().from("audit_log").insert({ actor_id: safeActor(actorId), action: "employee.create", entity_id: row.id, summary: `Added ${row.name}` }));
     return mutate((s) => {
-      const e: Employee = { ...data, id: uid("e") };
+      const e: Employee = { ...data, id: row.id };
       s.employees.push(e);
       log(s, { actor_id: actorId, action: "employee.create", entity_id: e.id, summary: `Added ${e.name}` });
       return e;
@@ -110,7 +127,13 @@ export const writes = {
   },
 
   // Removes the employee, their scorecards/metrics, and clears them as anyone's manager.
-  removeEmployee(actorId: string, id: string) {
+  async removeEmployee(actorId: string, id: string) {
+    const existing = mutate((s) => s.employees.find((x) => x.id === id));
+    if (!existing) return null;
+    // scorecards/scorecard_metrics cascade-delete via FK; the two manager
+    // columns are ON DELETE SET NULL, so those clear themselves too.
+    await must("employees.delete", await sb().from("employees").delete().eq("id", id));
+    await must("audit_log.insert", await sb().from("audit_log").insert({ actor_id: safeActor(actorId), action: "employee.delete", entity_id: id, summary: `Removed ${existing.name}` }));
     return mutate((s) => {
       const e = s.employees.find((x) => x.id === id);
       if (!e) return null;
@@ -130,72 +153,120 @@ export const writes = {
 
   // Adds the same metric to every employee in a department for a period
   // (starting their scorecard if needed). Returns how many got it.
-  addMetricToDepartment(actorId: string, departmentId: string, periodId: string,
+  async addMetricToDepartment(actorId: string, departmentId: string, periodId: string,
     data: Omit<ScorecardMetric, "id" | "scorecard_id" | "sort_order" | "updated_at" | "updated_by">) {
-    return mutate((s) => {
-      const people = s.employees.filter((e) => e.department_id === departmentId);
-      for (const e of people) {
-        let sc = s.scorecards.find((x) => x.employee_id === e.id && x.period_id === periodId);
-        if (!sc) { sc = { id: uid("sc"), employee_id: e.id, period_id: periodId }; s.scorecards.push(sc); }
-        const order = s.metrics.filter((m) => m.scorecard_id === sc!.id).length;
-        s.metrics.push({ ...data, id: uid("m"), scorecard_id: sc.id, sort_order: order, updated_at: new Date().toISOString(), updated_by: actorId });
-        log(s, { actor_id: actorId, action: "metric.create", entity_id: e.id, summary: `Added metric “${data.name}” (department-wide)` });
+    const people = mutate((s) => s.employees.filter((e) => e.department_id === departmentId));
+    for (const e of people) {
+      let scId = mutate((s) => s.scorecards.find((x) => x.employee_id === e.id && x.period_id === periodId)?.id);
+      if (!scId) {
+        scId = must("scorecards.insert", await sb().from("scorecards").insert({ employee_id: e.id, period_id: periodId }).select().single()).id;
       }
-      return people.length;
-    });
+      const order = mutate((s) => s.metrics.filter((m) => m.scorecard_id === scId).length);
+      const row = must("scorecard_metrics.insert", await sb().from("scorecard_metrics").insert({
+        ...data, scorecard_id: scId, sort_order: order, updated_at: new Date().toISOString(), updated_by: safeActor(actorId),
+      }).select().single());
+      await must("audit_log.insert", await sb().from("audit_log").insert({ actor_id: safeActor(actorId), action: "metric.create", entity_id: e.id, summary: `Added metric "${data.name}" (department-wide)` }));
+      mutate((s) => {
+        let sc = s.scorecards.find((x) => x.id === scId);
+        if (!sc) { sc = { id: scId!, employee_id: e.id, period_id: periodId }; s.scorecards.push(sc); }
+        s.metrics.push({ ...data, id: row.id, scorecard_id: scId!, sort_order: order, updated_at: row.updated_at, updated_by: actorId });
+        log(s, { actor_id: actorId, action: "metric.create", entity_id: e.id, summary: `Added metric "${data.name}" (department-wide)` });
+      });
+    }
+    return people.length;
   },
 
-  updateMetric(actorId: string, id: string, patch: Partial<ScorecardMetric>, summary: string) {
+  async updateMetric(actorId: string, id: string, patch: Partial<ScorecardMetric>, summary: string) {
+    const updated_at = new Date().toISOString();
+    await must("scorecard_metrics.update", await sb().from("scorecard_metrics").update({ ...patch, updated_at, updated_by: safeActor(actorId) }).eq("id", id));
+    const scEmployeeId = mutate((s) => {
+      const m = s.metrics.find((x) => x.id === id);
+      return m ? s.scorecards.find((x) => x.id === m.scorecard_id)?.employee_id : undefined;
+    });
+    if (scEmployeeId) await must("audit_log.insert", await sb().from("audit_log").insert({ actor_id: safeActor(actorId), action: "metric.update", entity_id: scEmployeeId, summary }));
     return mutate((s) => {
       const m = s.metrics.find((x) => x.id === id);
       if (!m) throw new Error("Metric not found");
-      Object.assign(m, patch, { updated_at: new Date().toISOString(), updated_by: actorId });
+      Object.assign(m, patch, { updated_at, updated_by: actorId });
       const sc = s.scorecards.find((x) => x.id === m.scorecard_id)!;
       log(s, { actor_id: actorId, action: "metric.update", entity_id: sc.employee_id, summary });
       return m;
     });
   },
 
-  addMetric(actorId: string, scorecardId: string, data: Omit<ScorecardMetric, "id" | "scorecard_id" | "sort_order" | "updated_at" | "updated_by">) {
+  async addMetric(actorId: string, scorecardId: string, data: Omit<ScorecardMetric, "id" | "scorecard_id" | "sort_order" | "updated_at" | "updated_by">) {
+    const order = mutate((s) => s.metrics.filter((m) => m.scorecard_id === scorecardId).length);
+    const updated_at = new Date().toISOString();
+    const row = must("scorecard_metrics.insert", await sb().from("scorecard_metrics").insert({
+      ...data, scorecard_id: scorecardId, sort_order: order, updated_at, updated_by: safeActor(actorId),
+    }).select().single());
+    const employeeId = mutate((s) => s.scorecards.find((x) => x.id === scorecardId)?.employee_id);
+    if (employeeId) await must("audit_log.insert", await sb().from("audit_log").insert({ actor_id: safeActor(actorId), action: "metric.create", entity_id: employeeId, summary: `Added metric "${data.name}"` }));
     return mutate((s) => {
       const sc = s.scorecards.find((x) => x.id === scorecardId);
       if (!sc) throw new Error("Scorecard not found");
-      const order = s.metrics.filter((m) => m.scorecard_id === scorecardId).length;
-      const m: ScorecardMetric = { ...data, id: uid("m"), scorecard_id: scorecardId, sort_order: order, updated_at: new Date().toISOString(), updated_by: actorId };
+      const m: ScorecardMetric = { ...data, id: row.id, scorecard_id: scorecardId, sort_order: order, updated_at, updated_by: actorId };
       s.metrics.push(m);
-      log(s, { actor_id: actorId, action: "metric.create", entity_id: sc.employee_id, summary: `Added metric “${m.name}”` });
+      log(s, { actor_id: actorId, action: "metric.create", entity_id: sc.employee_id, summary: `Added metric "${m.name}"` });
       return m;
     });
   },
 
-  removeMetric(actorId: string, id: string) {
-    return mutate((s) => {
+  async removeMetric(actorId: string, id: string) {
+    const found = mutate((s) => {
       const m = s.metrics.find((x) => x.id === id);
-      if (!m) return;
-      const sc = s.scorecards.find((x) => x.id === m.scorecard_id)!;
+      const sc = m ? s.scorecards.find((x) => x.id === m.scorecard_id) : undefined;
+      return m && sc ? { name: m.name, employeeId: sc.employee_id } : null;
+    });
+    if (!found) return;
+    await must("scorecard_metrics.delete", await sb().from("scorecard_metrics").delete().eq("id", id));
+    await must("audit_log.insert", await sb().from("audit_log").insert({ actor_id: safeActor(actorId), action: "metric.delete", entity_id: found.employeeId, summary: `Removed metric "${found.name}"` }));
+    mutate((s) => {
       s.metrics = s.metrics.filter((x) => x.id !== id);
-      log(s, { actor_id: actorId, action: "metric.delete", entity_id: sc.employee_id, summary: `Removed metric “${m.name}”` });
+      log(s, { actor_id: actorId, action: "metric.delete", entity_id: found.employeeId, summary: `Removed metric "${found.name}"` });
     });
   },
 
   // New period's scorecard copies the latest one's metric definitions, with actuals cleared.
-  createScorecard(actorId: string, employeeId: string, periodId: string) {
-    return mutate((s) => {
-      if (s.scorecards.some((x) => x.employee_id === employeeId && x.period_id === periodId)) return;
-      const sc: Scorecard = { id: uid("sc"), employee_id: employeeId, period_id: periodId };
-      const previous = s.scorecards.filter((x) => x.employee_id === employeeId).pop();
-      s.scorecards.push(sc);
-      if (previous) {
-        s.metrics.filter((m) => m.scorecard_id === previous.id).forEach((m) =>
-          s.metrics.push({ ...m, id: uid("m"), scorecard_id: sc.id, actual: null, actual_source: null, updated_at: null, updated_by: null })
-        );
+  async createScorecard(actorId: string, employeeId: string, periodId: string) {
+    const already = mutate((s) => s.scorecards.some((x) => x.employee_id === employeeId && x.period_id === periodId));
+    if (already) return;
+    const scRow = must("scorecards.insert", await sb().from("scorecards").insert({ employee_id: employeeId, period_id: periodId }).select().single());
+    const previous = mutate((s) => s.scorecards.filter((x) => x.employee_id === employeeId).pop());
+    let copiedMetrics: ScorecardMetric[] = [];
+    if (previous) {
+      const prevMetrics = mutate((s) => s.metrics.filter((m) => m.scorecard_id === previous.id));
+      if (prevMetrics.length) {
+        const rows = must("scorecard_metrics.insert", await sb().from("scorecard_metrics").insert(
+          prevMetrics.map((m) => ({
+            name: m.name, description: m.description, type: m.type, unit: m.unit, direction: m.direction,
+            target: m.target, weight: m.weight, actual: null, actual_source: null,
+            source_config: m.source_config, sort_order: m.sort_order, scorecard_id: scRow.id,
+            updated_at: null, updated_by: null,
+          }))
+        ).select()) ?? [];
+        copiedMetrics = rows.map((r: any, i: number) => ({ ...prevMetrics[i], id: r.id, scorecard_id: scRow.id, actual: null, actual_source: null, updated_at: null, updated_by: null }));
       }
-      const period = s.periods.find((p) => p.id === periodId);
+    }
+    const period = mutate((s) => s.periods.find((p) => p.id === periodId));
+    await must("audit_log.insert", await sb().from("audit_log").insert({ actor_id: safeActor(actorId), action: "scorecard.create", entity_id: employeeId, summary: `Started scorecard for ${period?.label ?? periodId}` }));
+    mutate((s) => {
+      const sc: Scorecard = { id: scRow.id, employee_id: employeeId, period_id: periodId };
+      s.scorecards.push(sc);
+      copiedMetrics.forEach((m) => s.metrics.push(m));
       log(s, { actor_id: actorId, action: "scorecard.create", entity_id: employeeId, summary: `Started scorecard for ${period?.label ?? periodId}` });
     });
   },
 
-  reset() {
+  async reset() {
     write(buildSeed());
   },
 };
+
+// audit_log.actor_id references app_users.id — the temporary hardcoded
+// fallback login (src/lib/auth/session.ts) has no real app_users row, so
+// writing its fake id there would violate the foreign key. Store null
+// instead in that one case; every real login's id is a real app_users row.
+function safeActor(actorId: string): string | null {
+  return actorId === "fallback-sujal" ? null : actorId;
+}
