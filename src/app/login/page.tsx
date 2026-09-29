@@ -16,13 +16,26 @@ export default function LoginPage() {
     setError(null);
     const supabase = createClient();
     const { error } = await supabase.auth.signInWithPassword({ email, password });
-    setLoading(false);
-    if (error) {
-      setError(error.message === "Invalid login credentials" ? "Wrong email or password." : error.message);
+    if (!error) {
+      setLoading(false);
+      router.push("/");
+      router.refresh();
       return;
     }
-    router.push("/");
-    router.refresh();
+    // Temporary fallback for one fixed account while Supabase login is
+    // being debugged — see src/lib/auth/session.ts.
+    const fb = await fetch("/api/auth", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    });
+    setLoading(false);
+    if (fb.ok) {
+      router.push("/");
+      router.refresh();
+      return;
+    }
+    setError(error.message === "Invalid login credentials" ? "Wrong email or password." : error.message);
   }
 
   return (

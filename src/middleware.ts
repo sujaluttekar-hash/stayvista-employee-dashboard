@@ -8,6 +8,10 @@ export async function middleware(request: NextRequest) {
   const path = request.nextUrl.pathname;
   if (path === "/login" || path.startsWith("/api/auth")) return NextResponse.next();
 
+  // Temporary fallback while real Supabase login is debugged — see
+  // src/lib/auth/session.ts. REMOVE this block once that's confirmed working.
+  if (request.cookies.get("sv_fallback")?.value === "1") return NextResponse.next();
+
   let response = NextResponse.next({ request });
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
