@@ -92,6 +92,21 @@ export const db = {
     read().metrics.filter((m) => m.scorecard_id === scorecardId).sort((a, b) => a.sort_order - b.sort_order),
   metric: (id: string) => read().metrics.find((m) => m.id === id) ?? null,
   scorecardById: (id: string) => read().scorecards.find((s) => s.id === id) ?? null,
+  // Checked against Supabase directly, not the local store -- on Vercel
+  // the local store is per-instance and can reset or fall out of sync,
+  // so it doesn't reliably reflect every employee that's actually been
+  // added (this was the cause of duplicate employee_no errors).
+  employeeNoTaken: async (no: string): Promise<boolean> => {
+    const { data } = await sb().from("employees").select("id").ilike("employee_no", no).limit(1);
+    return !!data && data.length > 0;
+  },
+  nextEmployeeNo: async (): Promise<string> => {
+    const { count } = await sb().from("employees").select("id", { count: "exact", head: true });
+    let n = (count ?? 0) + 1;
+    let no = `EMP-${String(n).padStart(3, "0")}`;
+    while (await db.employeeNoTaken(no)) { n++; no = `EMP-${String(n).padStart(3, "0")}`; }
+    return no;
+  },
   audit: (entityIds: string[], limit = 15) =>
     read().audit.filter((a) => entityIds.includes(a.entity_id)).slice(0, limit),
 };
@@ -116,10 +131,21 @@ export const writes = {
   },
 
   async addEmployee(actorId: string, data: Omit<Employee, "id">) {
-    const row = must("employees.insert", await sb().from("employees").insert(data).select().single());
+    // Belt-and-suspenders: even after checking employeeNoTaken() up front,
+    // retry with a fresh number if a concurrent add slipped in between
+    // the check and this insert (Postgres unique_violation = code 23505).
+    let attempt = { ...data };
+    let result = await sb().from("employees").insert(attempt).select().single();
+    let tries = 0;
+    while (result.error?.code === "23505" && tries < 5) {
+      attempt = { ...attempt, employee_no: await db.nextEmployeeNo() };
+      result = await sb().from("employees").insert(attempt).select().single();
+      tries++;
+    }
+    const row = must("employees.insert", result);
     await must("audit_log.insert", await sb().from("audit_log").insert({ actor_id: safeActor(actorId), action: "employee.create", entity_id: row.id, summary: `Added ${row.name}` }));
     return mutate((s) => {
-      const e: Employee = { ...data, id: row.id };
+      const e: Employee = { ...attempt, id: row.id };
       s.employees.push(e);
       log(s, { actor_id: actorId, action: "employee.create", entity_id: e.id, summary: `Added ${e.name}` });
       return e;

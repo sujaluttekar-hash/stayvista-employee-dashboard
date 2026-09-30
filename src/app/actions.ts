@@ -183,10 +183,11 @@ export async function addEmployee(_: ActionState, f: FormData) {
     assert(canManageEmployees(v), "Only HR or the Data team can add employees");
     const name = str(f, "name");
     assert(name.length > 1, "Enter a name");
-    const taken = (no: string) => db.employees().some((e) => e.employee_no.toLowerCase() === no.toLowerCase());
+    // Checked against Supabase directly, not the local store -- see
+    // employeeNoTaken/nextEmployeeNo in store.ts for why.
     let employee_no = str(f, "employee_no");
-    if (employee_no) assert(!taken(employee_no), `Employee number ${employee_no} is already in use`);
-    else { let n = db.employees().length + 1; do { employee_no = `EMP-${String(n++).padStart(3, "0")}`; } while (taken(employee_no)); }
+    if (employee_no) assert(!(await db.employeeNoTaken(employee_no)), `Employee number ${employee_no} is already in use`);
+    else employee_no = await db.nextEmployeeNo();
     const department_id = str(f, "department_id") || null;
     assert(!department_id || !!db.department(department_id), "Department not found");
     const l1 = str(f, "l1_manager_id") || null;
