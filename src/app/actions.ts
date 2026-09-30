@@ -34,7 +34,10 @@ async function run(fn: () => string | Promise<string>): Promise<ActionState> {
     if (e instanceof PermissionError) return { error: e.message };
     if (e?.digest?.startsWith?.("NEXT_REDIRECT")) throw e;
     console.error(e);
-    return { error: "Something went wrong. Please try again." };
+    // TEMP: showing the real error while debugging the Supabase write
+    // path. Revert to a generic "Something went wrong" message once
+    // things are working -- this can leak internal details otherwise.
+    return { error: e?.message ? `Error: ${e.message}` : "Something went wrong. Please try again." };
   }
 }
 
