@@ -2,8 +2,18 @@
 import { useEffect, useRef, useState } from "react";
 import { addDepartmentMetric, addEmployee, addMetric, assignManagers, placeInDepartment, updateEmployee } from "@/app/actions";
 import { Result, Submit, inputCls, labelCls, useAction } from "./forms";
+import { DESIGNATIONS } from "@/lib/data/types";
 
 type Opt = { id: string; name: string; l1?: string | null };
+
+function DesignationSelect({ defaultValue }: { defaultValue?: string }) {
+  return (
+    <select name="designation" defaultValue={defaultValue ?? ""} className={inputCls}>
+      <option value="">Select…</option>
+      {DESIGNATIONS.map((d) => <option key={d} value={d}>{d}</option>)}
+    </select>
+  );
+}
 
 function ManagerSelects({ people, excludeId, l1, l2 }: { people: Opt[]; excludeId?: string; l1: string | null; l2: string | null }) {
   const [a, setA] = useState(l1 ?? "");
@@ -55,7 +65,7 @@ export function EmployeeDetailsForm({ employee, departments }: {
     <form action={action} className="space-y-3">
       <input type="hidden" name="employee_id" value={employee.id} />
       <label className="block"><span className={labelCls}>Designation</span>
-        <input name="designation" defaultValue={employee.designation} className={inputCls} /></label>
+        <DesignationSelect defaultValue={employee.designation} /></label>
       <label className="block"><span className={labelCls}>Department</span>
         <select name="department_id" defaultValue={employee.department_id ?? ""} className={inputCls}>
           <option value="">Unassigned</option>
@@ -86,7 +96,7 @@ export function AddEmployeeForm({ departments, people, defaultDepartment }: {
       </div>
       <label className="block"><span className={labelCls}>Full name</span><input name="name" required className={inputCls} /></label>
       <label className="block"><span className={labelCls}>Employee number (optional)</span><input name="employee_no" className={inputCls} placeholder="Auto if left blank" /></label>
-      <label className="block"><span className={labelCls}>Designation</span><input name="designation" className={inputCls} /></label>
+      <label className="block"><span className={labelCls}>Designation</span><DesignationSelect /></label>
       <label className="block"><span className={labelCls}>Department</span>
         <select name="department_id" defaultValue={defaultDepartment ?? ""} className={inputCls}>
           <option value="">Unassigned for now</option>

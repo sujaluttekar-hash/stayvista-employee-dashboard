@@ -38,23 +38,60 @@ create table departments (
   has_real_metrics boolean not null default false
 );
 
--- Matches src/lib/data/seed.ts DEPARTMENTS exactly (13 departments,
--- including Business Intelligence / Data, which owns the 3 role logins'
--- sample employees).
+-- Matches src/lib/data/seed.ts DEPARTMENTS exactly (50 real StayVista
+-- departments/sub-functions, including Business Intelligence, which
+-- owns the 3 role logins' sample employees).
 insert into departments (slug, name, accent, has_real_metrics) values
-  ('business-intelligence',     'Business Intelligence / Data',  'sky',   true),
-  ('fnb',                       'Culinary & F&B',                'shine', false),
-  ('revenue',                   'Revenue',                       'bloom', false),
-  ('kam',                       'KAM',                           'sky',   false),
-  ('tech',                      'Tech',                          'sky',   false),
-  ('people-success',            'People Success',                'bloom', false),
-  ('finance',                   'Finance',                       'sky',   false),
-  ('acquisition',               'Acquisition',                   'bloom', false),
-  ('operations',                'Operations',                    'shine', false),
-  ('facility-mgmt',             'Facility Management',           'shine', false),
-  ('events-experience',         'Events & Experience',           'bloom', false),
-  ('transformation-interiors',  'Transformation and Interiors',  'sky',   false),
-  ('brand-marketing',           'Brand & Marketing',             'bloom', false);
+  ('management', 'Management', 'bloom', false),
+  ('sales', 'Sales', 'sky', false),
+  ('stake-holder-finance-services', 'Stake Holder Finance Services', 'shine', false),
+  ('revenue', 'Revenue', 'bloom', false),
+  ('supply-growth', 'Supply Growth', 'sky', false),
+  ('financial-control-and-support', 'Financial Control & Support', 'shine', false),
+  ('key-account', 'Key Account', 'bloom', false),
+  ('channel', 'Channel', 'sky', false),
+  ('product', 'Product', 'shine', false),
+  ('it', 'IT', 'bloom', false),
+  ('reservation', 'Reservation', 'sky', false),
+  ('vista-signature-experience', 'Vista Signature Experience', 'shine', false),
+  ('retention', 'Retention', 'bloom', false),
+  ('brand-strategy-and-partnership', 'Brand Strategy & Partnership', 'sky', false),
+  ('property-maintenance', 'Property Maintenance', 'shine', false),
+  ('stay-experience', 'Stay Experience', 'bloom', false),
+  ('photography', 'Photography', 'sky', false),
+  ('property-ops', 'Property Ops', 'shine', false),
+  ('operations-and-strategy', 'Operations & Strategy', 'bloom', false),
+  ('guest-support', 'Guest Support', 'sky', false),
+  ('engineering', 'Engineering', 'shine', false),
+  ('procurement', 'Procurement', 'bloom', false),
+  ('founders-office', 'Founder''s Office', 'sky', false),
+  ('chef', 'Chef', 'shine', false),
+  ('acquisition', 'Acquisition', 'bloom', false),
+  ('audit', 'Audit', 'sky', false),
+  ('brand-communication', 'Brand Communication', 'shine', false),
+  ('design', 'Design', 'bloom', false),
+  ('food-and-beverage', 'Food & Beverage', 'sky', false),
+  ('am-ops', 'AM Ops', 'shine', false),
+  ('process-optimization', 'Process Optimization', 'bloom', false),
+  ('account-management-central', 'Account Management Central', 'sky', false),
+  ('legal-and-compliance', 'Legal & Compliance', 'shine', false),
+  ('facility-management-services', 'Facility Management Services', 'bloom', false),
+  ('operations', 'Operations', 'sky', false),
+  ('talent-acquisition', 'Talent Acquisition', 'shine', false),
+  ('creative-studio', 'Creative Studio', 'bloom', false),
+  ('business-intelligence', 'Business Intelligence', 'sky', true),
+  ('events-and-experience', 'Events & Experience', 'shine', false),
+  ('stay-ops', 'Stay Ops', 'bloom', false),
+  ('lead-management', 'Lead Management', 'sky', false),
+  ('resorts-and-residences', 'Resorts & Residences', 'shine', false),
+  ('butler', 'Butler', 'bloom', false),
+  ('admin', 'Admin', 'sky', false),
+  ('organization-development-and-landd', 'Organization Development & L&D', 'shine', false),
+  ('growth-marketing', 'Growth Marketing', 'bloom', false),
+  ('intelligence', 'Intelligence', 'sky', false),
+  ('people-success', 'People Success', 'shine', false),
+  ('finance-and-accounts', 'Finance & Accounts', 'bloom', false),
+  ('corporate-sales', 'Corporate Sales', 'sky', false);
 
 -- ============================================================
 -- EMPLOYEES — records, not logins. L1/L2 are informational only

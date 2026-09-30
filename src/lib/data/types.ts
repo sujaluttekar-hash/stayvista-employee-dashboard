@@ -90,3 +90,26 @@ export type Store = {
   metrics: ScorecardMetric[];
   audit: AuditEntry[];
 };
+
+// The company's standard job titles, used as the Designation dropdown
+// when adding or editing an employee. "Founder" excluded on purpose.
+export const DESIGNATIONS = [
+  "Partner",
+  "Associate Director",
+  "Associate General Manager",
+  "Manager",
+  "Senior Specialist",
+  "Senior General Manager",
+  "General Manager",
+  "Executive",
+  "Specialist",
+  "Senior Executive",
+  "Chef",
+  "Consultant",
+  "Butler",
+  "Management Trainee",
+  "People Success Business Partner",
+  "Senior General Manager - Head - Brand Marketing",
+  "Property Supervisor",
+  "Manager Creative Content Strategist",
+] as const;
