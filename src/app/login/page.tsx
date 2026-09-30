@@ -14,23 +14,27 @@ export default function LoginPage() {
     e.preventDefault();
     setLoading(true);
     setError(null);
-    const supabase = createClient();
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (!error) {
-      setLoading(false);
-      router.push("/");
-      router.refresh();
-      return;
-    }
-    // Temporary fallback for one fixed account while Supabase login is
-    // being debugged — see src/lib/auth/session.ts.
+
+    // Try the temporary fixed-account fallback FIRST — see
+    // src/lib/auth/session.ts. This must win even if a real Supabase
+    // account with this email exists but has no app_users row (which
+    // would otherwise silently bounce back to /login with no error).
     const fb = await fetch("/api/auth", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, password }),
     });
-    setLoading(false);
     if (fb.ok) {
+      setLoading(false);
+      router.push("/");
+      router.refresh();
+      return;
+    }
+
+    const supabase = createClient();
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    setLoading(false);
+    if (!error) {
       router.push("/");
       router.refresh();
       return;
