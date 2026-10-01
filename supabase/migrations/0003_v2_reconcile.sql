@@ -14,13 +14,25 @@ create extension if not exists "pgcrypto";
 -- never deployed against a live project (Supabase was removed
 -- for preview mode in v0.2, before any real data existed).
 -- ------------------------------------------------------------
+-- Old v1 tables (never had real data in them):
 drop table if exists redash_sync_log cascade;
 drop table if exists custom_kras cascade;
 drop table if exists scores cascade;
-drop table if exists scorecard_metrics cascade;
 drop table if exists scorecard_templates cascade;
 drop table if exists profiles cascade;
 drop table if exists people cascade;
+-- This migration's own tables too, so it's safe to re-run from scratch
+-- any time (e.g. after changing the department list or review periods)
+-- without hitting "relation already exists" partway through, which
+-- silently stops the rest of the script and was the cause of repeated
+-- confusion earlier (new periods/departments not showing up because
+-- the insert statements for them never actually ran).
+drop table if exists audit_log cascade;
+drop table if exists scorecard_metrics cascade;
+drop table if exists scorecards cascade;
+drop table if exists review_periods cascade;
+drop table if exists app_users cascade;
+drop table if exists employees cascade;
 drop table if exists departments cascade;
 drop function if exists my_role() cascade;
 drop function if exists my_person_id() cascade;
