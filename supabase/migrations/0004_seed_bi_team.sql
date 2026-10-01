@@ -40,7 +40,7 @@ begin
 
   -- ---------- Ronak's scorecard ----------
   v_sc := 'eedf7a15-99f4-4965-8035-9545ee643edc';
-  insert into scorecards (id, employee_id, period_id) values (v_sc, v_ronak, '2026-q3');
+  insert into scorecards (id, employee_id, period_id) values (v_sc, v_ronak, '2026-09');
   insert into scorecard_metrics (scorecard_id, id, name, description, type, unit, direction, target, weight, actual, actual_source, source_config, sort_order, updated_at, updated_by) values
   (v_sc, '2f2f840a-1a95-4492-8fd7-0f32463f20b6', 'Revenue reporting accuracy', 'Revenue reports matching finance close figures', 'automatic', '%', 'higher_is_better', 98, 25, null, null, '{"kind":"redash","query_id":null,"value_column":"value"}', 0, null, null),
   (v_sc, '7606924c-4253-46b1-acce-3361aa853df0', 'Dashboard automation', 'Manual reports replaced by automated dashboards', 'manual', 'count', 'higher_is_better', 5, 20, 4, 'manual', null, 1, now(), null),
@@ -50,7 +50,7 @@ begin
 
   -- ---------- Sujal's scorecard ----------
   v_sc := 'fed7db37-8744-4973-a65c-da70ad96980c';
-  insert into scorecards (id, employee_id, period_id) values (v_sc, v_sujal, '2026-q3');
+  insert into scorecards (id, employee_id, period_id) values (v_sc, v_sujal, '2026-09');
   insert into scorecard_metrics (scorecard_id, id, name, description, type, unit, direction, target, weight, actual, actual_source, source_config, sort_order, updated_at, updated_by) values
   (v_sc, '34833ac9-df64-43d3-af36-9221784be42f', 'Automation scripts shipped', 'Bots or pipelines moved to production', 'manual', 'count', 'higher_is_better', 4, 30, 3, 'manual', null, 0, now(), null),
   (v_sc, '88ecd36f-964a-4727-adb0-f77bb0f0c29d', 'Manual hours saved', 'Estimated team hours saved per month by automations', 'manual', 'hours', 'higher_is_better', 40, 25, 32, 'manual', null, 1, now(), null),
@@ -59,7 +59,7 @@ begin
 
   -- ---------- Aditya's scorecard ----------
   v_sc := '391a152a-3e39-4aa6-a051-aaa9f6011338';
-  insert into scorecards (id, employee_id, period_id) values (v_sc, v_aditya, '2026-q3');
+  insert into scorecards (id, employee_id, period_id) values (v_sc, v_aditya, '2026-09');
   insert into scorecard_metrics (scorecard_id, id, name, description, type, unit, direction, target, weight, actual, actual_source, source_config, sort_order, updated_at, updated_by) values
   (v_sc, 'f1feab89-1f2f-4ac4-bb90-ad1acfd9063b', 'Revenue reporting accuracy', 'Revenue reports matching finance close figures', 'automatic', '%', 'higher_is_better', 98, 30, null, null, '{"kind":"redash","query_id":null,"value_column":"value"}', 0, null, null),
   (v_sc, 'c27ce169-21fa-4c4e-9f9c-b4c5788e4eaa', 'Dashboards delivered', 'New dashboards signed off by the requesting team', 'manual', 'count', 'higher_is_better', 5, 25, 5, 'manual', null, 1, now(), null),
@@ -68,7 +68,7 @@ begin
 
   -- ---------- Dhanesh's scorecard ----------
   v_sc := '8b9bab41-5693-415c-8e0d-c3cb73e9acb7';
-  insert into scorecards (id, employee_id, period_id) values (v_sc, v_dhanesh, '2026-q3');
+  insert into scorecards (id, employee_id, period_id) values (v_sc, v_dhanesh, '2026-09');
   insert into scorecard_metrics (scorecard_id, id, name, description, type, unit, direction, target, weight, actual, actual_source, source_config, sort_order, updated_at, updated_by) values
   (v_sc, '21200e96-9855-4f56-bfb1-c934ed1faa98', 'Report accuracy', 'Recurring reports shipped without a correction', 'automatic', '%', 'higher_is_better', 97, 30, null, null, '{"kind":"redash","query_id":null,"value_column":"value"}', 0, null, null),
   (v_sc, 'b6687b97-e090-4c75-afcb-1d4dd406071b', 'On-time report delivery', 'Recurring reports delivered by their scheduled time', 'manual', '%', 'higher_is_better', 95, 30, 88, 'manual', null, 1, now(), null),

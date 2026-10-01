@@ -7,6 +7,7 @@ export function LoginsManager() {
   const [logins, setLogins] = useState<Login[] | null>(null);
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
+  const [password, setPassword] = useState("");
   const [role, setRole] = useState<"hr" | "manager" | "data">("manager");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -28,7 +29,7 @@ export function LoginsManager() {
     const res = await fetch("/api/admin/logins", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, display_name: name, role }),
+      body: JSON.stringify({ email, display_name: name, role, password: password || undefined }),
     });
     const body = await res.json();
     setBusy(false);
@@ -38,6 +39,7 @@ export function LoginsManager() {
     }
     setEmail("");
     setName("");
+    setPassword("");
     setMagicLink(body.magicLink);
     load();
   }
@@ -76,6 +78,16 @@ export function LoginsManager() {
             required
             value={name}
             onChange={(e) => setName(e.target.value)}
+            className="border border-line rounded px-2 py-1.5 text-sm"
+          />
+        </div>
+        <div>
+          <label className="text-xs text-muted block">Password (optional)</label>
+          <input
+            type="text"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="Leave blank for a sign-in link"
             className="border border-line rounded px-2 py-1.5 text-sm"
           />
         </div>

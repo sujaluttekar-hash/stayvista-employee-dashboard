@@ -43,7 +43,6 @@ create table departments (
 -- for anything the app writes (e.g. adding an employee to a department)
 -- to resolve correctly against real Supabase rows.
 insert into departments (id, slug, name, accent, has_real_metrics) values
-  ('2a09d013-f1a5-4ee3-a175-786a51ae728b', 'management', 'Management', 'bloom', false),
   ('a4994450-42cb-4d2f-8721-0326409da2f1', 'sales', 'Sales', 'sky', false),
   ('bb97dda3-bda5-4c3f-b940-102fceeeb2c3', 'stake-holder-finance-services', 'Stake Holder Finance Services', 'shine', false),
   ('ece872c9-2ec4-4be4-bafb-4a54f4d83cee', 'revenue', 'Revenue', 'bloom', false),
@@ -71,7 +70,7 @@ insert into departments (id, slug, name, accent, has_real_metrics) values
   ('b4de9782-6a13-442a-9ecd-8b514f17a554', 'audit', 'Audit', 'sky', false),
   ('d502ca6f-e706-4a6b-8f80-67e4dd06cc32', 'brand-communication', 'Brand Communication', 'shine', false),
   ('7608e015-b9e8-4a90-b76c-27bb56aa19c6', 'design', 'Design', 'bloom', false),
-  ('46f275e4-9d35-45e5-bd4b-17ad715531a4', 'food-and-beverage', 'Food & Beverage', 'sky', false),
+  ('46f275e4-9d35-45e5-bd4b-17ad715531a4', 'food-and-beverage', 'F&B Ops', 'sky', false),
   ('178c41fe-56a8-4db7-bc0d-a676ceae1ce7', 'am-ops', 'AM Ops', 'shine', false),
   ('bbb28eb7-fa92-46e8-a46c-ffc33d468227', 'process-optimization', 'Process Optimization', 'bloom', false),
   ('a69ba122-c7fa-4e1c-9a23-c7b294aa1e5e', 'account-management-central', 'Account Management Central', 'sky', false),
@@ -125,7 +124,7 @@ create table app_users (
 );
 
 -- ============================================================
--- REVIEW PERIODS — quarterly cycle, e.g. '2026-q3'
+-- REVIEW PERIODS — scorecards run month to month, e.g. '2026-09'
 -- ============================================================
 create table review_periods (
   id text primary key,
@@ -135,8 +134,18 @@ create table review_periods (
 );
 
 insert into review_periods (id, label, starts, ends) values
-  ('2026-q3', 'Q3 2026 (Jul–Sep)', '2026-07-01', '2026-09-30'),
-  ('2026-q4', 'Q4 2026 (Oct–Dec)', '2026-10-01', '2026-12-31');
+  ('2026-01', 'January 2026', '2026-01-01', '2026-01-31'),
+  ('2026-02', 'February 2026', '2026-02-01', '2026-02-28'),
+  ('2026-03', 'March 2026', '2026-03-01', '2026-03-31'),
+  ('2026-04', 'April 2026', '2026-04-01', '2026-04-30'),
+  ('2026-05', 'May 2026', '2026-05-01', '2026-05-31'),
+  ('2026-06', 'June 2026', '2026-06-01', '2026-06-30'),
+  ('2026-07', 'July 2026', '2026-07-01', '2026-07-31'),
+  ('2026-08', 'August 2026', '2026-08-01', '2026-08-31'),
+  ('2026-09', 'September 2026', '2026-09-01', '2026-09-30'),
+  ('2026-10', 'October 2026', '2026-10-01', '2026-10-31'),
+  ('2026-11', 'November 2026', '2026-11-01', '2026-11-30'),
+  ('2026-12', 'December 2026', '2026-12-01', '2026-12-31');
 
 -- ============================================================
 -- SCORECARDS — one per employee × period

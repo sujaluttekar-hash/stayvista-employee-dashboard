@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { requireViewer } from "@/lib/auth/session";
 import { canManageEmployees, canRunSync } from "@/lib/auth/permissions";
-import { db } from "@/lib/data/store";
+import { db, hydrateStore } from "@/lib/data/store";
 import SignOut from "./sign-out";
 import { NavLink } from "./nav-link";
 
@@ -11,6 +11,9 @@ const ROLE_LABEL = { hr: "HR", manager: "Manager", data: "Data team" };
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const v = await requireViewer();
+  // Every page under this layout reads db.* synchronously, so the fresh
+  // Supabase fetch has to happen here, once, before any of them render.
+  await hydrateStore();
   const departments = db.departments();
   const staffed = new Set(db.employees().map((e) => e.department_id));
 

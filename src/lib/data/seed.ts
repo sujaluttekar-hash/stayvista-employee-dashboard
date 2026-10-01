@@ -12,7 +12,6 @@ import type { Department, Employee, AppUser, ReviewPeriod, Scorecard, ScorecardM
 export const STORE_VERSION = 3;
 
 const DEPARTMENTS: Department[] = [
-  { id: "2a09d013-f1a5-4ee3-a175-786a51ae728b", slug: "management", name: "Management", accent: "bloom", has_real_metrics: false },
   { id: "a4994450-42cb-4d2f-8721-0326409da2f1", slug: "sales", name: "Sales", accent: "sky", has_real_metrics: false },
   { id: "bb97dda3-bda5-4c3f-b940-102fceeeb2c3", slug: "stake-holder-finance-services", name: "Stake Holder Finance Services", accent: "shine", has_real_metrics: false },
   { id: "ece872c9-2ec4-4be4-bafb-4a54f4d83cee", slug: "revenue", name: "Revenue", accent: "bloom", has_real_metrics: false },
@@ -40,7 +39,7 @@ const DEPARTMENTS: Department[] = [
   { id: "b4de9782-6a13-442a-9ecd-8b514f17a554", slug: "audit", name: "Audit", accent: "sky", has_real_metrics: false },
   { id: "d502ca6f-e706-4a6b-8f80-67e4dd06cc32", slug: "brand-communication", name: "Brand Communication", accent: "shine", has_real_metrics: false },
   { id: "7608e015-b9e8-4a90-b76c-27bb56aa19c6", slug: "design", name: "Design", accent: "bloom", has_real_metrics: false },
-  { id: "46f275e4-9d35-45e5-bd4b-17ad715531a4", slug: "food-and-beverage", name: "Food & Beverage", accent: "sky", has_real_metrics: false },
+  { id: "46f275e4-9d35-45e5-bd4b-17ad715531a4", slug: "food-and-beverage", name: "F&B Ops", accent: "sky", has_real_metrics: false },
   { id: "178c41fe-56a8-4db7-bc0d-a676ceae1ce7", slug: "am-ops", name: "AM Ops", accent: "shine", has_real_metrics: false },
   { id: "bbb28eb7-fa92-46e8-a46c-ffc33d468227", slug: "process-optimization", name: "Process Optimization", accent: "bloom", has_real_metrics: false },
   { id: "a69ba122-c7fa-4e1c-9a23-c7b294aa1e5e", slug: "account-management-central", name: "Account Management Central", accent: "sky", has_real_metrics: false },
@@ -80,9 +79,20 @@ const USERS: AppUser[] = [
   { id: "u-data", display_name: "Data team", role: "data" },
 ];
 
+// Scorecards run month to month, not quarterly.
 const PERIODS: ReviewPeriod[] = [
-  { id: "2026-q3", label: "Jul – Sep 2026", starts: "2026-07-01", ends: "2026-09-30" },
-  { id: "2026-q4", label: "Oct – Dec 2026", starts: "2026-10-01", ends: "2026-12-31" },
+  { id: "2026-01", label: "January 2026", starts: "2026-01-01", ends: "2026-01-31" },
+  { id: "2026-02", label: "February 2026", starts: "2026-02-01", ends: "2026-02-28" },
+  { id: "2026-03", label: "March 2026", starts: "2026-03-01", ends: "2026-03-31" },
+  { id: "2026-04", label: "April 2026", starts: "2026-04-01", ends: "2026-04-30" },
+  { id: "2026-05", label: "May 2026", starts: "2026-05-01", ends: "2026-05-31" },
+  { id: "2026-06", label: "June 2026", starts: "2026-06-01", ends: "2026-06-30" },
+  { id: "2026-07", label: "July 2026", starts: "2026-07-01", ends: "2026-07-31" },
+  { id: "2026-08", label: "August 2026", starts: "2026-08-01", ends: "2026-08-31" },
+  { id: "2026-09", label: "September 2026", starts: "2026-09-01", ends: "2026-09-30" },
+  { id: "2026-10", label: "October 2026", starts: "2026-10-01", ends: "2026-10-31" },
+  { id: "2026-11", label: "November 2026", starts: "2026-11-01", ends: "2026-11-30" },
+  { id: "2026-12", label: "December 2026", starts: "2026-12-01", ends: "2026-12-31" },
 ];
 
 type MetricSeed = Omit<ScorecardMetric, "id" | "scorecard_id" | "sort_order" | "actual_source" | "updated_at" | "updated_by" | "source_config" | "actual"> & {
@@ -165,7 +175,7 @@ export function buildSeed(): Store {
 
   for (const [employeeId, list] of Object.entries(METRICS_BY_EMPLOYEE)) {
     const scId = SCORECARD_IDS[employeeId];
-    const sc: Scorecard = { id: scId, employee_id: employeeId, period_id: "2026-q3" };
+    const sc: Scorecard = { id: scId, employee_id: employeeId, period_id: "2026-09" };
     scorecards.push(sc);
     list.forEach((m, i) => {
       const hasActual = m.actual !== undefined;

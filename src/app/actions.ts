@@ -5,7 +5,7 @@
 import { revalidatePath } from "next/cache";
 import { requireViewer } from "@/lib/auth/session";
 import { assert, canEditScores, canManageEmployees, canRunSync, PermissionError } from "@/lib/auth/permissions";
-import { db, writes } from "@/lib/data/store";
+import { db, writes, hydrateStore } from "@/lib/data/store";
 import { fetchAutomaticValue } from "@/lib/sources";
 import { formatValue } from "@/lib/scoring";
 import type { EmployeeStatus, MetricDirection, MetricType, ScorecardMetric } from "@/lib/data/types";
@@ -27,6 +27,10 @@ function num(f: FormData, k: string, label: string, { allowEmpty = false, min = 
 
 async function run(fn: () => string | Promise<string>): Promise<ActionState> {
   try {
+    // Server actions run in their own invocation, separate from any page
+    // render -- hydrate here too so permission checks and lookups inside
+    // fn() see current Supabase data, not stale/empty local memory.
+    await hydrateStore();
     const ok = await fn();
     revalidatePath("/", "layout");
     return { ok };

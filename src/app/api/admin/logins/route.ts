@@ -27,20 +27,23 @@ export async function POST(req: NextRequest) {
   const v = await requireViewer();
   if (!canManageEmployees(v)) return NextResponse.json({ error: "Not allowed" }, { status: 403 });
 
-  const { email, display_name, role } = await req.json();
+  const { email, display_name, role, password } = await req.json();
   if (!email || !display_name || !["hr", "manager", "data"].includes(role)) {
     return NextResponse.json({ error: "email, display_name and a valid role are required" }, { status: 400 });
+  }
+  if (password && password.length < 6) {
+    return NextResponse.json({ error: "Password must be at least 6 characters" }, { status: 400 });
   }
 
   const admin = createAdminClient();
 
-  // Create the auth user with a random password nobody will ever type —
-  // they sign in via the magic link below the first time, then can set
-  // their own password (or you can share a reset link again later).
-  const tempPassword = crypto.randomUUID();
+  // If a password was given, use it directly -- they can sign in with it
+  // right away, no link to share. If left blank, fall back to a random
+  // password plus a one-time magic link, same as before.
+  const usingChosenPassword = !!password;
   const { data: created, error: createError } = await admin.auth.admin.createUser({
     email,
-    password: tempPassword,
+    password: usingChosenPassword ? password : crypto.randomUUID(),
     email_confirm: true,
   });
   if (createError || !created.user) {
@@ -55,11 +58,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: insertError.message }, { status: 400 });
   }
 
-  // A one-time sign-in link — share this with them so they can get in
-  // and set a real password. Requires Site URL to be set in Supabase
+  if (usingChosenPassword) {
+    return NextResponse.json({ ok: true, id: created.user.id, magicLink: null });
+  }
+
+  // No password given -- share this one-time link instead so they can
+  // get in and set their own. Requires Site URL to be set in Supabase
   // Auth settings; otherwise this still works, just links to localhost.
   const { data: link } = await admin.auth.admin.generateLink({ type: "magiclink", email });
-
   return NextResponse.json({ ok: true, id: created.user.id, magicLink: link?.properties?.action_link ?? null });
 }
 

@@ -12,9 +12,6 @@ import "server-only";
 // fails (the local change is NOT kept), so the two stores can't drift
 // apart silently.
 // ─────────────────────────────────────────────────────────────────────
-import fs from "fs";
-import os from "os";
-import path from "path";
 import type { Store, Employee, ScorecardMetric, AuditEntry, Scorecard } from "./types";
 import { buildSeed, STORE_VERSION } from "./seed";
 import { createAdminClient } from "@/lib/supabase/server";
@@ -27,41 +24,55 @@ function must<T>(label: string, result: { data: T; error: any }): T {
   return result.data;
 }
 
-function storePath() {
-  if (process.env.PREVIEW_STORE_PATH) return process.env.PREVIEW_STORE_PATH;
-  const local = path.join(process.cwd(), ".data", "preview-store.json");
-  try {
-    fs.mkdirSync(path.dirname(local), { recursive: true });
-    fs.accessSync(path.dirname(local), fs.constants.W_OK);
-    return local;
-  } catch {
-    return path.join(os.tmpdir(), "sv-preview-store.json");
+let memory: Store | null = null;
+let hydratedAt = 0;
+
+// Supabase is the real source of truth. `memory` is a per-request cache
+// of it: hydrateStore() fetches everything fresh and MUST be called once
+// at the start of every request that reads db.* -- see the dashboard
+// layout (every page) and run() in actions.ts (every write, so a
+// permission check mid-action sees current data too). Without that
+// call, `read()` falls back to whatever is left in `memory` from a
+// previous request on this same server instance, or the bundled demo
+// seed on a cold start -- which is exactly the "add an employee, it
+// disappears on refresh" bug this replaces.
+export async function hydrateStore(): Promise<void> {
+  const [dep, emp, usr, per, sc, met, aud] = await Promise.all([
+    sb().from("departments").select("*"),
+    sb().from("employees").select("*"),
+    sb().from("app_users").select("*"),
+    sb().from("review_periods").select("*").order("starts"),
+    sb().from("scorecards").select("*"),
+    sb().from("scorecard_metrics").select("*"),
+    sb().from("audit_log").select("*").order("at", { ascending: false }).limit(500),
+  ]);
+  for (const [label, r] of [["departments", dep], ["employees", emp], ["app_users", usr], ["review_periods", per], ["scorecards", sc], ["scorecard_metrics", met], ["audit_log", aud]] as const) {
+    if (r.error) throw new Error(`Supabase read failed (${label}): ${r.error.message}`);
   }
+  memory = {
+    version: STORE_VERSION,
+    departments: dep.data as Store["departments"],
+    employees: emp.data as Store["employees"],
+    users: (usr.data as any[]).map((u) => ({ id: u.id, display_name: u.display_name, role: u.role })),
+    periods: per.data as Store["periods"],
+    scorecards: sc.data as Store["scorecards"],
+    metrics: met.data as Store["metrics"],
+    audit: (aud.data as any[]).map((a) => ({ id: a.id, at: a.at, actor_id: a.actor_id, action: a.action, entity_id: a.entity_id, summary: a.summary })),
+  };
+  hydratedAt = Date.now();
 }
 
-let memory: Store | null = null;
-
 function read(): Store {
-  const p = storePath();
-  try {
-    const parsed = JSON.parse(fs.readFileSync(p, "utf8")) as Store;
-    if (parsed.version === STORE_VERSION) return (memory = parsed);
-  } catch {
-    /* missing or unreadable — fall through to seed */
-  }
   if (memory && memory.version === STORE_VERSION) return memory;
-  const seeded = buildSeed();
-  write(seeded);
-  return seeded;
+  // Nothing hydrated yet on this instance (shouldn't normally happen --
+  // see hydrateStore() call sites) -- fall back to the bundled demo
+  // seed so the app still renders something instead of crashing.
+  console.error("store.ts: read() called before hydrateStore() -- showing demo seed data, not Supabase");
+  return buildSeed();
 }
 
 function write(s: Store) {
   memory = s;
-  try {
-    fs.writeFileSync(storePath(), JSON.stringify(s, null, 2));
-  } catch {
-    /* read-only filesystem — keep in memory only */
-  }
 }
 
 function mutate<T>(fn: (s: Store) => T): T {
