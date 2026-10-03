@@ -32,8 +32,12 @@ export default async function Overview({ searchParams }: { searchParams: { perio
       <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {departments.map((d) => {
           const people = db.employeesIn(d.id);
-          const scores = people.map((e) => periodSummary(e.id, period.id)?.score).filter((s): s is number => s != null);
-          const avg = scores.length ? Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 10) / 10 : null;
+          const sums = people.map((e) => periodSummary(e.id, period.id)).filter((s): s is NonNullable<typeof s> => !!s && s.score != null);
+          // Rated (out of 5) people are averaged on their own scale; mixing scales would be meaningless.
+          const five = sums.length > 0 && sums.every((s) => s.scale === "five");
+          const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
+          const avg = !sums.length ? null : five ? Math.round(mean(sums.map((s) => s.score!)) * 100) / 100 : Math.round(mean(sums.map((s) => s.percent!)) * 10) / 10;
+          const avgPercent = !sums.length ? null : mean(sums.map((s) => s.percent!));
           return (
             <Link key={d.id} href={`/departments/${d.slug}?period=${period.id}`} className="bg-panel border border-line rounded p-5 hover:border-ink/30 block">
               <div className="flex items-start justify-between gap-3">
@@ -42,7 +46,7 @@ export default async function Overview({ searchParams }: { searchParams: { perio
               </div>
               <div className="mt-4 flex items-baseline justify-between">
                 <span className="text-sm text-muted">{people.length ? `${people.length} ${people.length === 1 ? "person" : "people"}` : "No one yet"}</span>
-                <span className={`font-serif text-2xl tabular-nums ${scoreTone(avg)}`}>{avg ?? "—"}</span>
+                <span className={`font-serif text-2xl tabular-nums ${scoreTone(avgPercent)}`}>{avg == null ? "—" : five ? `${avg.toFixed(2)}` : avg}{five && <span className="text-xs text-muted"> / 5</span>}</span>
               </div>
               <div className="text-[11px] text-muted text-right">avg score, {period.label}</div>
             </Link>

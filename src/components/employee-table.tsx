@@ -49,7 +49,7 @@ export function EmployeeTable({ employees, period, showDepartment = true, rowAct
                 <td className="px-4 py-3 text-right tabular-nums">
                   {s ? (
                     <>
-                      <span className={`font-medium ${scoreTone(s.score)}`}>{s.score ?? "—"}</span>
+                      <span className={`font-medium ${scoreTone(s.percent)}`}>{s.score == null ? "—" : s.scale === "five" ? `${s.score.toFixed(2)} / 5` : s.score}</span>
                       <span className="block text-[11px] text-muted">{s.coverage}% of weight has data</span>
                     </>
                   ) : <span className="text-xs text-muted">No scorecard</span>}

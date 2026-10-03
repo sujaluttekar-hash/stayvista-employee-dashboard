@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import type { ScorecardMetric } from "@/lib/data/types";
-import { formatValue, metricScore, metricStatus, weightedScore } from "@/lib/scoring";
+import { displayScore, formatValue, isRated, metricScore, metricStatus, weightedDisplay } from "@/lib/scoring";
 import { removeMetric, updateMetric } from "@/app/actions";
 import { SourceTag, StatusPill, TypeBadge, scoreTone } from "./ui";
 import { Result, Submit, inputCls, useAction } from "./forms";
@@ -14,8 +14,10 @@ export function MetricRow({ m, canEdit, updatedByName, periodLabel }: {
   const [removeState, removeAction] = useAction(removeMetric);
   useEffect(() => { if (state?.ok) setOpen(false); }, [state]);
 
-  const score = metricScore(m);
-  const weighted = weightedScore(m);
+  const rated = isRated(m);
+  const shown = displayScore(m);
+  const weighted = weightedDisplay(m);
+  const tone = scoreTone(metricScore(m));
   const lowerBetter = m.direction === "lower_is_better";
 
   return (
@@ -34,8 +36,8 @@ export function MetricRow({ m, canEdit, updatedByName, periodLabel }: {
           <SourceTag source={m.actual_source} />
         </td>
         <td className="px-3 py-3 text-right tabular-nums">{m.weight}%</td>
-        <td className={`px-3 py-3 text-right tabular-nums ${scoreTone(score)}`}>{score ?? "—"}</td>
-        <td className="px-3 py-3 text-right tabular-nums">{weighted ?? "—"}</td>
+        <td className={`px-3 py-3 text-right tabular-nums ${tone}`}>{shown ?? "—"}{rated && shown != null && <span className="text-[10px] text-muted"> /5</span>}</td>
+        <td className="px-3 py-3 text-right tabular-nums">{weighted == null ? "—" : rated ? weighted.toFixed(2) : weighted}</td>
         <td className="px-3 py-3"><StatusPill status={metricStatus(m)} /></td>
         <td className="px-3 py-3 text-xs text-muted whitespace-nowrap">{periodLabel}</td>
         <td className="px-3 py-3 text-xs text-muted min-w-[120px]">
@@ -72,6 +74,12 @@ export function MetricRow({ m, canEdit, updatedByName, periodLabel }: {
                 <div className="w-56 text-xs text-muted pb-1.5">
                   Actual comes from the data source. {m.source_config?.query_id ? `Redash query #${m.source_config.query_id}.` : "No query linked yet."}
                 </div>
+              )}
+              {rated && (
+                <label className="w-24">
+                  <span className="block text-xs text-muted mb-1">Score (0–5)</span>
+                  <input name="rating" defaultValue={m.rating ?? ""} inputMode="decimal" placeholder="Not set" className={inputCls} />
+                </label>
               )}
               <label className="w-24">
                 <span className="block text-xs text-muted mb-1">Weightage %</span>

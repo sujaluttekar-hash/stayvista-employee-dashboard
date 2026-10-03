@@ -138,6 +138,11 @@ export function AddMetricForm({ scorecardId, departmentId, periodId, label = "Ad
         </select></label>
       <label><span className={labelCls}>Direction</span>
         <select name="direction" className={inputCls}><option value="higher_is_better">Higher is better</option><option value="lower_is_better">Lower is better</option></select></label>
+      <label className="col-span-2"><span className={labelCls}>How it is scored</span>
+        <select name="scoring" className={inputCls} defaultValue="linear">
+          <option value="linear">Calculated from actual vs target (0–100)</option>
+          <option value="rated">Rated 1–5 by the manager (like the scorecard sheets)</option>
+        </select></label>
       <div className="grid grid-cols-2 gap-3">
         <label><span className={labelCls}>Target</span><input name="target" required inputMode="decimal" className={inputCls} /></label>
         <label><span className={labelCls}>Weight %</span><input name="weight" required inputMode="decimal" className={inputCls} /></label>

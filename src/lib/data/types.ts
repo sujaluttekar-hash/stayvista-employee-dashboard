@@ -34,6 +34,7 @@ export type AppUser = {
 };
 
 export type MetricType = "manual" | "automatic";
+export type MetricScoring = "linear" | "rated";
 export type MetricDirection = "higher_is_better" | "lower_is_better";
 export type ActualSource = "manual" | "redash" | "demo";
 
@@ -61,6 +62,11 @@ export type ScorecardMetric = {
   updated_at: string | null;
   updated_by: string | null; // AppUser.id, or "seed" for sample data
   sort_order: number;
+  // How the score is produced:
+  //   "linear" (default / missing): calculated from actual vs target, 0-100
+  //   "rated": a manager types a 0-5 score (`rating`), like the sheet-based scorecards
+  scoring?: MetricScoring;
+  rating?: number | null;
 };
 
 export type ReviewPeriod = { id: string; label: string; starts: string; ends: string };

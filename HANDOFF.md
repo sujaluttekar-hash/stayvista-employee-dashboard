@@ -1,5 +1,5 @@
 # Employee Dashboard — StayVista
-## Handoff document · current version **v0.6.2** (3 Oct 2026)
+## Handoff document · current version **v0.7** (3 Oct 2026)
 
 Keep this file current. Every change to the app adds a row to the version history and updates the sections it touches.
 
@@ -9,6 +9,7 @@ Keep this file current. Every change to the app adds a row to the version histor
 
 | Version | Date | What changed |
 |---|---|---|
+| **v0.7** | 2026-10-03 | **"Rated 1-5" scoring**, so scorecards built from the HR/ops sheets look exactly like the sheet. A metric can now be *Rated*: the manager types a score from 1 to 5 next to the actual; weighted = score x weight / 100; the scorecard total is the sum, shown **out of 5**. Existing metrics are unchanged (calculated from actual vs target, out of 100). New: migration 0006, an "How it is scored" choice when adding a metric, a "Score (0-5)" box when editing a rated metric, and the total / overview show "out of 5" when every weighted metric is rated. A scorecard that mixes both kinds falls back to out of 100. First user: Akhil Multani, F&B Ops, Apr-Aug 2026 (totals 3.20, 3.20, 4.30, 4.00, 4.20, matching the sheet). |
 | **v0.6.2** | 2026-10-03 | **Fix:** the safety stop at the top of migration 0003 (added in v0.6) failed on a brand-new database, because Postgres checked a table that didn't exist yet. Now uses dynamic SQL; tested on a fresh database (loads) and on one with data (refuses). The live database was not affected. |
 | **v0.6.1** | 2026-10-03 | **Hotfix:** middleware could crash the whole site with Vercel's "500 MIDDLEWARE_INVOCATION_FAILED" (e.g. when a deployment had no Supabase settings). It now never throws: missing settings or an unreachable database send people to the login page with a plain message, still without letting anyone in. |
 | **v0.6** | 2026-10-03 | **Security:** removed the hardcoded fallback login (it was also bypassable with a cookie). Only emails registered under Management → Logins can get in, checked at the front door (middleware), at sign-in and on every page. **Monthly scorecards everywhere:** month switcher on Overview, Department, Management, Employee and Data sources pages; non-monthly periods ignored; the app adds the next months by itself (it used to run out after Dec 2026). **Sync rewritten:** one Redash call per query (was one per person per metric), tolerant month/employee matching, partial failures reported instead of aborting, unchanged values skipped. **Removed** the "Preview mode" banner, "Reset preview data" and "Fill with demo values". **Bug fixes:** see "Bugs fixed in v0.6". Migration 0003 now refuses to run on a database that has data; new safe migration 0005. |
@@ -55,6 +56,17 @@ supabase/migrations/         ← database history (see "Database" below)
 
 **Access:** the only way in is an email added under **Management → Logins**. That creates the Supabase sign-in *and* the `app_users` row. Without the row, a person is turned away at the middleware, at the login form, and by `getViewer()`.
 
+## Scoring: two modes per metric
+
+| | Calculated (default) | Rated 1-5 |
+|---|---|---|
+| Who produces the score | The app: actual vs target, capped at 100 | The manager types it (0-5) |
+| Weighted | score x weight / 100 (percent points) | rating x weight / 100 (e.g. 0.40) |
+| Scorecard total | out of 100 | out of 5 (when every weighted metric is rated) |
+| Use for | Redash / numeric KPIs | Scorecards that come from a sheet with a 1-5 score column |
+
+Rated scores are **typed, not calculated**: the dashboard does not re-derive them from score bands, because the source sheets contain scores that don't follow their own bands in a few places and the sheet is the record. Auto-scoring from bands is possible later (store the band thresholds per metric) but would change some recorded totals, so it needs a business decision first.
+
 ## Monthly scorecards
 
 - A period id is `YYYY-MM` (e.g. `2026-10`). Anything else in `review_periods` (old quarters) is ignored.
@@ -99,6 +111,7 @@ Run in the Supabase SQL editor, in order. Already-applied ones are not re-run.
 | 0003_v2_reconcile.sql | current schema. **Drops tables.** Now refuses to run if employees exist. | applied |
 | 0004_seed_bi_team.sql | BI team sample scorecards | applied |
 | **0005_monthly_periods_and_cleanup.sql** | adds months to 2028, removes unused non-monthly periods, fixes wording. Safe to re-run. | **to run** |
+| **0006_rated_scoring.sql** | adds `scoring` and `rating` columns for Rated 1-5 metrics. Only adds; safe to re-run. **Run BEFORE deploying v0.7.** | **to run** |
 | bootstrap_first_login.sql | one-off: give the first person access. Manual, not a migration. | **to run only if needed** |
 
 Never edit an applied migration to change the database; add a new numbered one.

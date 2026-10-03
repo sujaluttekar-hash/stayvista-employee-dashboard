@@ -7,8 +7,8 @@ import { requireViewer } from "@/lib/auth/session";
 import { assert, canEditScores, canManageEmployees, canRunSync, PermissionError } from "@/lib/auth/permissions";
 import { db, writes, hydrateStore } from "@/lib/data/store";
 import { createSyncSession, redashConfigured } from "@/lib/sources";
-import { formatValue } from "@/lib/scoring";
-import type { EmployeeStatus, MetricDirection, MetricType, ScorecardMetric } from "@/lib/data/types";
+import { formatValue, isRated } from "@/lib/scoring";
+import type { EmployeeStatus, MetricDirection, MetricScoring, MetricType, ScorecardMetric } from "@/lib/data/types";
 
 export type ActionState = { ok?: string; error?: string } | null;
 
@@ -51,6 +51,12 @@ function scorecardOwner(scorecardId: string) {
   return emp!;
 }
 
+// "Rated 1-5" metrics carry two extra fields. Linear metrics send nothing extra,
+// so they keep working even before the 0006 migration has been run.
+function scoringFields(f: FormData): { scoring?: MetricScoring; rating?: number | null } {
+  return str(f, "scoring") === "rated" ? { scoring: "rated", rating: null } : {};
+}
+
 // ── Metrics ──────────────────────────────────────────────────────────
 export async function updateMetric(_: ActionState, f: FormData) {
   return run(async () => {
@@ -68,6 +74,13 @@ export async function updateMetric(_: ActionState, f: FormData) {
     if (patch.target !== m!.target) changes.push(`target ${formatValue(m!.target, m!.unit)} → ${formatValue(patch.target!, m!.unit)}`);
     if (patch.weight !== m!.weight) changes.push(`weight ${m!.weight}% → ${patch.weight}%`);
 
+    if (isRated(m!)) {
+      const rating = num(f, "rating", "Score", { allowEmpty: true, min: 0, max: 5 });
+      if (rating !== (m!.rating ?? null)) {
+        patch.rating = rating;
+        changes.push(`score ${m!.rating ?? "—"} → ${rating ?? "—"}`);
+      }
+    }
     if (m!.type === "manual") {
       const actual = num(f, "actual", "Actual", { allowEmpty: true, min: 0 });
       if (actual !== m!.actual) {
@@ -96,6 +109,7 @@ export async function addMetric(_: ActionState, f: FormData) {
       name,
       description: str(f, "description"),
       type,
+      ...scoringFields(f),
       unit: (str(f, "unit") || "count") as ScorecardMetric["unit"],
       direction: (str(f, "direction") || "higher_is_better") as MetricDirection,
       target: num(f, "target", "Target", { min: 0 })!,
@@ -256,6 +270,7 @@ export async function addDepartmentMetric(_: ActionState, f: FormData) {
     assert(type === "manual" || type === "automatic", "Choose Manual or Automatic");
     const n = await writes.addMetricToDepartment(v.user.id, dept!.id, str(f, "period_id"), {
       name, description: str(f, "description"), type,
+      ...scoringFields(f),
       unit: (str(f, "unit") || "count") as ScorecardMetric["unit"],
       direction: (str(f, "direction") || "higher_is_better") as MetricDirection,
       target: num(f, "target", "Target", { min: 0 })!,

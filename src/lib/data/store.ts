@@ -310,9 +310,10 @@ export const writes = {
             target: m.target, weight: m.weight, actual: null, actual_source: null,
             source_config: m.source_config, sort_order: m.sort_order, scorecard_id: scRow.id,
             updated_at: null, updated_by: null,
+            ...(m.scoring === "rated" ? { scoring: "rated", rating: null } : {}),
           }))
         ).select()) ?? [];
-        copiedMetrics = rows.map((r: any, i: number) => ({ ...prevMetrics[i], id: r.id, scorecard_id: scRow.id, actual: null, actual_source: null, updated_at: null, updated_by: null }));
+        copiedMetrics = rows.map((r: any, i: number) => ({ ...prevMetrics[i], id: r.id, scorecard_id: scRow.id, actual: null, actual_source: null, rating: prevMetrics[i].scoring === "rated" ? null : prevMetrics[i].rating, updated_at: null, updated_by: null }));
       }
     }
     const period = mutate((s) => s.periods.find((p) => p.id === periodId));

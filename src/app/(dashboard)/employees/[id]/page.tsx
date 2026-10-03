@@ -85,8 +85,8 @@ export default async function EmployeeScorecardPage({ params, searchParams }: { 
           {/* Summary */}
           <section className="mt-6 grid grid-cols-1 sm:grid-cols-[auto_1fr] gap-6 items-center">
             <div className="flex items-baseline gap-2">
-              <span className={`font-serif text-6xl tabular-nums leading-none ${scoreTone(summary.score)}`}>{summary.score ?? "—"}</span>
-              <span className="text-sm text-muted">overall<br />out of 100</span>
+              <span className={`font-serif text-6xl tabular-nums leading-none ${scoreTone(summary.percent)}`}>{summary.score == null ? "—" : summary.scale === "five" ? summary.score.toFixed(2) : summary.score}</span>
+              <span className="text-sm text-muted">overall<br />out of {summary.max}</span>
             </div>
             <div className="max-w-md">
               <div className="flex justify-between text-xs text-muted mb-1.5">
@@ -96,7 +96,9 @@ export default async function EmployeeScorecardPage({ params, searchParams }: { 
               <div className="h-1.5 bg-hair rounded-full overflow-hidden">
                 <div className="h-full bg-sky-deep" style={{ width: `${summary.coverage}%` }} />
               </div>
-              <p className="text-[11px] text-muted mt-1.5">The overall score only counts metrics that have an actual, so missing data doesn&apos;t pull it down. Check coverage before comparing people.</p>
+              <p className="text-[11px] text-muted mt-1.5">{summary.scale === "five"
+                ? "Each metric is scored 1 to 5 by the manager. Weighted = score × weight, and the overall is the sum, out of 5."
+                : "The overall score only counts metrics that have an actual, so missing data doesn’t pull it down. Check coverage before comparing people."}</p>
             </div>
           </section>
 

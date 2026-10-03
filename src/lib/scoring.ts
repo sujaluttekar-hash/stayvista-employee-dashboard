@@ -1,15 +1,19 @@
 // Scoring rules — pure functions, safe on client and server.
 //
-//   Score (0–100)   = achievement vs target, capped at 100
-//                     higher-is-better: actual / target
-//                     lower-is-better:  target / actual (at or under target → 100)
-//   Weighted score  = score × weight / 100
-//   Overall score   = Σ weighted ÷ Σ weight of metrics WITH an actual × 100
-//                     (so missing data doesn't silently drag the score down —
-//                      coverage is shown separately)
+// Two ways a metric can be scored (metric.scoring):
 //
-// ASSUMPTION: linear scoring with a 100 cap. Swap in per-metric banding
-// here if HR defines bands (e.g. 90% of target = 3/5).
+//  LINEAR (default)  score 0-100 = achievement vs target, capped at 100
+//                      higher-is-better: actual / target
+//                      lower-is-better:  at or under target = 100, else target / actual
+//  RATED             a manager types a 0-5 score (metric.rating), exactly like the
+//                    sheet-based scorecards. Internally that is rating x 20 (%), so
+//                    both kinds can sit on one scorecard.
+//
+//  Weighted score    = score x weight / 100
+//  Overall           = weighted average of the metrics that HAVE a score (coverage is
+//                      shown separately so missing data doesn't silently drag it down)
+//  Scale             = "five" when every weighted metric is RATED: the overall is then
+//                      shown out of 5 (same as the sheet). Otherwise out of 100.
 import type { ScorecardMetric } from "@/lib/data/types";
 
 export type MetricStatus = "achieved" | "on_track" | "in_progress" | "behind" | "not_started" | "awaiting_data";
@@ -23,7 +27,13 @@ export const STATUS_LABEL: Record<MetricStatus, string> = {
   awaiting_data: "Awaiting data",
 };
 
-export function metricScore(m: Pick<ScorecardMetric, "actual" | "target" | "direction">): number | null {
+type Scorable = Pick<ScorecardMetric, "actual" | "target" | "direction"> & Partial<Pick<ScorecardMetric, "scoring" | "rating">>;
+
+export const isRated = (m: Pick<ScorecardMetric, "scoring">) => m.scoring === "rated";
+
+// Score as a PERCENT (0-100), or null when there is nothing to score yet.
+export function metricScore(m: Scorable): number | null {
+  if (isRated(m)) return m.rating == null ? null : Math.max(0, Math.min(100, Math.round(m.rating * 20 * 10) / 10));
   if (m.actual == null) return null;
   let ratio: number;
   if (m.direction === "lower_is_better") {
@@ -37,12 +47,32 @@ export function metricScore(m: Pick<ScorecardMetric, "actual" | "target" | "dire
   return Math.max(0, Math.min(100, Math.round(ratio * 1000) / 10));
 }
 
+// What the Score column shows: the 0-5 rating for rated metrics, the 0-100 score otherwise.
+export function displayScore(m: ScorecardMetric): number | null {
+  return isRated(m) ? (m.rating ?? null) : metricScore(m);
+}
+
+// Percent-points contributed to a 0-100 overall (used for averaging).
 export function weightedScore(m: ScorecardMetric) {
   const s = metricScore(m);
   return s == null ? null : Math.round(s * m.weight) / 100;
 }
 
+// What the Weighted column shows: rating x weight / 100 (e.g. 0.40) for rated
+// metrics, like the sheet; percent-points for linear ones.
+export function weightedDisplay(m: ScorecardMetric): number | null {
+  if (isRated(m)) return m.rating == null ? null : Math.round(m.rating * m.weight) / 100;
+  return weightedScore(m);
+}
+
 export function metricStatus(m: ScorecardMetric): MetricStatus {
+  if (isRated(m)) {
+    if (m.rating == null) return m.type === "automatic" ? "awaiting_data" : "not_started";
+    if (m.rating >= 5) return "achieved";
+    if (m.rating >= 4) return "on_track";
+    if (m.rating >= 3) return "in_progress";
+    return "behind";
+  }
   const s = metricScore(m);
   if (s == null) return m.type === "automatic" ? "awaiting_data" : "not_started";
   if (s >= 100) return "achieved";
@@ -51,13 +81,40 @@ export function metricStatus(m: ScorecardMetric): MetricStatus {
   return "behind";
 }
 
-export function overall(metrics: ScorecardMetric[]) {
+export type Overall = {
+  score: number | null;   // to DISPLAY, on `max`
+  percent: number | null; // always 0-100: use for colours and for averaging across people
+  max: 5 | 100;
+  scale: "five" | "hundred";
+  coverage: number;
+  totalWeight: number;
+  weightOk: boolean;
+};
+
+export function overall(metrics: ScorecardMetric[]): Overall {
   const totalWeight = metrics.reduce((a, m) => a + m.weight, 0);
   const scored = metrics.filter((m) => metricScore(m) != null);
   const scoredWeight = scored.reduce((a, m) => a + m.weight, 0);
-  const weightedSum = scored.reduce((a, m) => a + (weightedScore(m) ?? 0), 0);
+  const weighted = metrics.filter((m) => m.weight > 0);
+  const five = weighted.length > 0 && weighted.every(isRated);
+
+  let percent: number | null = null;
+  let score: number | null = null;
+  if (scoredWeight) {
+    if (five) {
+      const s5 = scored.reduce((a, m) => a + (m.rating ?? 0) * m.weight, 0) / scoredWeight; // 0-5
+      score = Math.round(s5 * 100) / 100;
+      percent = Math.round(s5 * 20 * 10) / 10;
+    } else {
+      const sum = scored.reduce((a, m) => a + (metricScore(m) ?? 0) * m.weight, 0);
+      percent = Math.round((sum / scoredWeight) * 10) / 10;
+      score = percent;
+    }
+  }
   return {
-    score: scoredWeight ? Math.round((weightedSum / scoredWeight) * 1000) / 10 : null,
+    score, percent,
+    max: five ? 5 : 100,
+    scale: five ? "five" : "hundred",
     coverage: totalWeight ? Math.round((scoredWeight / totalWeight) * 100) : 0,
     totalWeight,
     weightOk: Math.abs(totalWeight - 100) < 0.01,
