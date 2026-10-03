@@ -15,9 +15,19 @@ create extension if not exists "pgcrypto";
 -- wipe real data, so it refuses. Never re-run it on a live
 -- project: add a new numbered migration instead (see 0005).
 -- ------------------------------------------------------------
+-- (Two separate IFs, not "A and exists(select ...)" in one condition:
+-- Postgres does not guarantee short-circuiting a SQL boolean AND, so a
+-- single combined condition tries to run the EXISTS subquery even on a
+-- truly fresh database where public.employees doesn't exist yet, which
+-- errors instead of just skipping the check.)
 do $$
+declare
+  has_data boolean := false;
 begin
-  if to_regclass('public.employees') is not null and exists (select 1 from public.employees) then
+  if to_regclass('public.employees') is not null then
+    select exists (select 1 from public.employees) into has_data;
+  end if;
+  if has_data then
     raise exception 'STOPPED: public.employees already has data and this migration would delete it. Use a new migration (0005 or later) instead.';
   end if;
 end $$;
