@@ -16,8 +16,15 @@ create extension if not exists "pgcrypto";
 -- project: add a new numbered migration instead (see 0005).
 -- ------------------------------------------------------------
 do $$
+declare
+  has_rows boolean := false;
 begin
-  if to_regclass('public.employees') is not null and exists (select 1 from public.employees) then
+  -- (dynamic SQL on purpose: on a brand-new database the table doesn't exist
+  --  yet, and a plain "select ... from public.employees" would fail to compile)
+  if to_regclass('public.employees') is not null then
+    execute 'select exists (select 1 from public.employees)' into has_rows;
+  end if;
+  if has_rows then
     raise exception 'STOPPED: public.employees already has data and this migration would delete it. Use a new migration (0005 or later) instead.';
   end if;
 end $$;

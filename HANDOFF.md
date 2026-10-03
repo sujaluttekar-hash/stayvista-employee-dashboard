@@ -1,5 +1,5 @@
 # Employee Dashboard — StayVista
-## Handoff document · current version **v0.6.1** (3 Oct 2026)
+## Handoff document · current version **v0.6.2** (3 Oct 2026)
 
 Keep this file current. Every change to the app adds a row to the version history and updates the sections it touches.
 
@@ -9,6 +9,7 @@ Keep this file current. Every change to the app adds a row to the version histor
 
 | Version | Date | What changed |
 |---|---|---|
+| **v0.6.2** | 2026-10-03 | **Fix:** the safety stop at the top of migration 0003 (added in v0.6) failed on a brand-new database, because Postgres checked a table that didn't exist yet. Now uses dynamic SQL; tested on a fresh database (loads) and on one with data (refuses). The live database was not affected. |
 | **v0.6.1** | 2026-10-03 | **Hotfix:** middleware could crash the whole site with Vercel's "500 MIDDLEWARE_INVOCATION_FAILED" (e.g. when a deployment had no Supabase settings). It now never throws: missing settings or an unreachable database send people to the login page with a plain message, still without letting anyone in. |
 | **v0.6** | 2026-10-03 | **Security:** removed the hardcoded fallback login (it was also bypassable with a cookie). Only emails registered under Management → Logins can get in, checked at the front door (middleware), at sign-in and on every page. **Monthly scorecards everywhere:** month switcher on Overview, Department, Management, Employee and Data sources pages; non-monthly periods ignored; the app adds the next months by itself (it used to run out after Dec 2026). **Sync rewritten:** one Redash call per query (was one per person per metric), tolerant month/employee matching, partial failures reported instead of aborting, unchanged values skipped. **Removed** the "Preview mode" banner, "Reset preview data" and "Fill with demo values". **Bug fixes:** see "Bugs fixed in v0.6". Migration 0003 now refuses to run on a database that has data; new safe migration 0005. |
 | v0.5 | 2026-09-28 → 10-01 | *(reconstructed from the commit log; the handoff was not updated at the time)* Supabase brought back as the real database. Real sign-in with Supabase Auth; Management → Logins creates them. All writes go to Supabase. The real 50 StayVista departments replace the demo ones; designation is a dropdown. BI team seeded (migration 0004). Monthly review periods introduced. Several fixes for employee-number clashes and a login redirect loop; a temporary hardcoded login was added for debugging. |
