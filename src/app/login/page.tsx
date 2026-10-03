@@ -1,7 +1,10 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+
+const NO_ACCESS =
+  "This email hasn't been given access. Ask HR or the Data team to add it under Management → Logins.";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -10,36 +13,42 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // The middleware sends people back here with ?reason=… when it stops them.
+  useEffect(() => {
+    const reason = new URLSearchParams(window.location.search).get("reason");
+    if (reason === "denied") setError(NO_ACCESS);
+    if (reason === "unavailable") setError("We couldn't check your access just now. Please try again in a moment.");
+  }, []);
+
   async function signIn(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     setError(null);
 
-    // Try the temporary fixed-account fallback FIRST — see
-    // src/lib/auth/session.ts. This must win even if a real Supabase
-    // account with this email exists but has no app_users row (which
-    // would otherwise silently bounce back to /login with no error).
-    const fb = await fetch("/api/auth", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
+    const supabase = createClient();
+    const { data, error: authError } = await supabase.auth.signInWithPassword({
+      email: email.trim().toLowerCase(),
+      password,
     });
-    if (fb.ok) {
+    if (authError || !data.user) {
       setLoading(false);
-      router.push("/");
-      router.refresh();
+      setError(
+        authError?.message === "Invalid login credentials" ? "Wrong email or password." : authError?.message ?? "Could not sign in."
+      );
       return;
     }
 
-    const supabase = createClient();
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    setLoading(false);
-    if (!error) {
-      router.push("/");
-      router.refresh();
+    // Only emails registered under Management → Logins may continue.
+    const { data: registered } = await supabase.from("app_users").select("id").eq("id", data.user.id).maybeSingle();
+    if (!registered) {
+      await supabase.auth.signOut();
+      setLoading(false);
+      setError(NO_ACCESS);
       return;
     }
-    setError(error.message === "Invalid login credentials" ? "Wrong email or password." : error.message);
+
+    router.push("/");
+    router.refresh();
   }
 
   return (
@@ -80,7 +89,7 @@ export default function LoginPage() {
           </button>
         </form>
 
-        {error && <div className="text-bad text-xs mt-3">{error}</div>}
+        {error && <div role="alert" className="text-bad text-xs mt-3">{error}</div>}
         <p className="text-[11px] text-muted mt-5 leading-relaxed">
           Only emails added under Management → Logins can sign in. Ask HR or the Data team for access.
         </p>

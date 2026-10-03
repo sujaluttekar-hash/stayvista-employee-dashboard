@@ -12,9 +12,11 @@ import "server-only";
 // fails (the local change is NOT kept), so the two stores can't drift
 // apart silently.
 // ─────────────────────────────────────────────────────────────────────
+import { cache } from "react";
 import type { Store, Employee, ScorecardMetric, AuditEntry, Scorecard } from "./types";
-import { buildSeed, STORE_VERSION } from "./seed";
+import { STORE_VERSION } from "./seed";
 import { createAdminClient } from "@/lib/supabase/server";
+import { isMonthly, monthIdOf, monthPeriod, shiftMonth, todayInIndia } from "@/lib/periods";
 
 function sb() {
   return createAdminClient();
@@ -25,18 +27,16 @@ function must<T>(label: string, result: { data: T; error: any }): T {
 }
 
 let memory: Store | null = null;
-let hydratedAt = 0;
 
 // Supabase is the real source of truth. `memory` is a per-request cache
-// of it: hydrateStore() fetches everything fresh and MUST be called once
-// at the start of every request that reads db.* -- see the dashboard
-// layout (every page) and run() in actions.ts (every write, so a
-// permission check mid-action sees current data too). Without that
-// call, `read()` falls back to whatever is left in `memory` from a
-// previous request on this same server instance, or the bundled demo
-// seed on a cold start -- which is exactly the "add an employee, it
-// disappears on refresh" bug this replaces.
-export async function hydrateStore(): Promise<void> {
+// of it. hydrateStore() fetches everything fresh. It is memoised PER
+// REQUEST (React cache), so every page, layout and server action can
+// simply `await hydrateStore()` first without paying for it twice.
+//
+// IMPORTANT: Next.js renders a layout and its page at the same time, so a
+// page must not rely on the layout having hydrated. Every page and every
+// action calls hydrateStore() itself before touching db.*.
+export const hydrateStore = cache(async (): Promise<void> => {
   const [dep, emp, usr, per, sc, met, aud] = await Promise.all([
     sb().from("departments").select("*"),
     sb().from("employees").select("*"),
@@ -49,26 +49,37 @@ export async function hydrateStore(): Promise<void> {
   for (const [label, r] of [["departments", dep], ["employees", emp], ["app_users", usr], ["review_periods", per], ["scorecards", sc], ["scorecard_metrics", met], ["audit_log", aud]] as const) {
     if (r.error) throw new Error(`Supabase read failed (${label}): ${r.error.message}`);
   }
+
+  // Scorecards are monthly. Ignore any non-monthly rows (e.g. old quarters)…
+  let periods = (per.data as Store["periods"]).filter(isMonthly);
+  // …and make sure this month and the next few always exist, so the app
+  // never runs out of months (it used to stop at December 2026).
+  const have = new Set(periods.map((p) => p.id));
+  const thisMonth = monthIdOf(todayInIndia());
+  const missing = [0, 1, 2, 3].map((n) => shiftMonth(thisMonth, n)).filter((id) => !have.has(id)).map(monthPeriod);
+  if (missing.length) {
+    const { error } = await sb().from("review_periods").upsert(missing, { onConflict: "id", ignoreDuplicates: true });
+    if (error) console.error("Could not extend review_periods:", error.message);
+    periods = [...periods, ...missing].sort((a, b) => a.starts.localeCompare(b.starts));
+  }
+
   memory = {
     version: STORE_VERSION,
     departments: dep.data as Store["departments"],
     employees: emp.data as Store["employees"],
     users: (usr.data as any[]).map((u) => ({ id: u.id, display_name: u.display_name, role: u.role })),
-    periods: per.data as Store["periods"],
+    periods,
     scorecards: sc.data as Store["scorecards"],
     metrics: met.data as Store["metrics"],
     audit: (aud.data as any[]).map((a) => ({ id: a.id, at: a.at, actor_id: a.actor_id, action: a.action, entity_id: a.entity_id, summary: a.summary })),
   };
-  hydratedAt = Date.now();
-}
+});
 
 function read(): Store {
   if (memory && memory.version === STORE_VERSION) return memory;
-  // Nothing hydrated yet on this instance (shouldn't normally happen --
-  // see hydrateStore() call sites) -- fall back to the bundled demo
-  // seed so the app still renders something instead of crashing.
-  console.error("store.ts: read() called before hydrateStore() -- showing demo seed data, not Supabase");
-  return buildSeed();
+  // Never fall back to sample data: showing made-up numbers as if they were
+  // real is worse than an error. Every caller must hydrateStore() first.
+  throw new Error("Data was read before it was loaded (hydrateStore() was not called first)");
 }
 
 function write(s: Store) {
@@ -108,7 +119,11 @@ export const db = {
   // so it doesn't reliably reflect every employee that's actually been
   // added (this was the cause of duplicate employee_no errors).
   employeeNoTaken: async (no: string): Promise<boolean> => {
-    const { data } = await sb().from("employees").select("id").ilike("employee_no", no).limit(1);
+    // ilike is case-insensitive but treats % and _ as wildcards: escape them
+    // so "EMP_001" can't be mistaken for "EMP-001".
+    const exact = no.trim().replace(/[\\%_]/g, (c) => `\\${c}`);
+    const { data, error } = await sb().from("employees").select("id").ilike("employee_no", exact).limit(1);
+    if (error) throw new Error(`Supabase read failed (employees): ${error.message}`);
     return !!data && data.length > 0;
   },
   nextEmployeeNo: async (): Promise<string> => {
@@ -193,15 +208,19 @@ export const writes = {
   async addMetricToDepartment(actorId: string, departmentId: string, periodId: string,
     data: Omit<ScorecardMetric, "id" | "scorecard_id" | "sort_order" | "updated_at" | "updated_by">) {
     const people = mutate((s) => s.employees.filter((e) => e.department_id === departmentId));
+    let added = 0;
     for (const e of people) {
       let scId = mutate((s) => s.scorecards.find((x) => x.employee_id === e.id && x.period_id === periodId)?.id);
       if (!scId) {
         scId = must("scorecards.insert", await sb().from("scorecards").insert({ employee_id: e.id, period_id: periodId }).select().single()).id;
       }
+      const already = mutate((s) => s.metrics.some((m) => m.scorecard_id === scId && m.name.trim().toLowerCase() === data.name.trim().toLowerCase()));
+      if (already) continue; // this person already has it: don't add a second copy
       const order = mutate((s) => s.metrics.filter((m) => m.scorecard_id === scId).length);
       const row = must("scorecard_metrics.insert", await sb().from("scorecard_metrics").insert({
         ...data, scorecard_id: scId, sort_order: order, updated_at: new Date().toISOString(), updated_by: safeActor(actorId),
       }).select().single());
+      added++;
       await must("audit_log.insert", await sb().from("audit_log").insert({ actor_id: safeActor(actorId), action: "metric.create", entity_id: e.id, summary: `Added metric "${data.name}" (department-wide)` }));
       mutate((s) => {
         let sc = s.scorecards.find((x) => x.id === scId);
@@ -210,7 +229,7 @@ export const writes = {
         log(s, { actor_id: actorId, action: "metric.create", entity_id: e.id, summary: `Added metric "${data.name}" (department-wide)` });
       });
     }
-    return people.length;
+    return added;
   },
 
   async updateMetric(actorId: string, id: string, patch: Partial<ScorecardMetric>, summary: string) {
@@ -269,7 +288,18 @@ export const writes = {
     const already = mutate((s) => s.scorecards.some((x) => x.employee_id === employeeId && x.period_id === periodId));
     if (already) return;
     const scRow = must("scorecards.insert", await sb().from("scorecards").insert({ employee_id: employeeId, period_id: periodId }).select().single());
-    const previous = mutate((s) => s.scorecards.filter((x) => x.employee_id === employeeId).pop());
+    // Copy the metric set from the closest earlier month that has a scorecard
+    // (or, when back-filling the very first month, the closest later one).
+    const previous = mutate((s) => {
+      const target = s.periods.find((p) => p.id === periodId);
+      const mine = s.scorecards
+        .filter((x) => x.employee_id === employeeId)
+        .map((x) => ({ x, starts: s.periods.find((p) => p.id === x.period_id)?.starts ?? "" }))
+        .filter((r) => r.starts && r.x.id !== scRow.id)
+        .sort((a, b) => a.starts.localeCompare(b.starts));
+      const before = mine.filter((r) => !target || r.starts < target.starts);
+      return (before.length ? before[before.length - 1] : mine[0])?.x;
+    });
     let copiedMetrics: ScorecardMetric[] = [];
     if (previous) {
       const prevMetrics = mutate((s) => s.metrics.filter((m) => m.scorecard_id === previous.id));
@@ -294,16 +324,10 @@ export const writes = {
       log(s, { actor_id: actorId, action: "scorecard.create", entity_id: employeeId, summary: `Started scorecard for ${period?.label ?? periodId}` });
     });
   },
-
-  async reset() {
-    write(buildSeed());
-  },
 };
 
-// audit_log.actor_id references app_users.id — the temporary hardcoded
-// fallback login (src/lib/auth/session.ts) has no real app_users row, so
-// writing its fake id there would violate the foreign key. Store null
-// instead in that one case; every real login's id is a real app_users row.
+// audit_log.actor_id references app_users.id. Every signed-in viewer is a
+// real app_users row now, so this is just a passthrough kept for the call sites.
 function safeActor(actorId: string): string | null {
-  return actorId === "fallback-sujal" ? null : actorId;
+  return actorId || null;
 }

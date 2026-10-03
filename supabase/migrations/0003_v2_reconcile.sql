@@ -10,6 +10,19 @@
 create extension if not exists "pgcrypto";
 
 -- ------------------------------------------------------------
+-- SAFETY STOP. This file DROPS and recreates every table below.
+-- If the database already holds employees, running it again would
+-- wipe real data, so it refuses. Never re-run it on a live
+-- project: add a new numbered migration instead (see 0005).
+-- ------------------------------------------------------------
+do $$
+begin
+  if to_regclass('public.employees') is not null and exists (select 1 from public.employees) then
+    raise exception 'STOPPED: public.employees already has data and this migration would delete it. Use a new migration (0005 or later) instead.';
+  end if;
+end $$;
+
+-- ------------------------------------------------------------
 -- Drop v1 tables (people/profiles/scores model). Safe: v1 was
 -- never deployed against a live project (Supabase was removed
 -- for preview mode in v0.2, before any real data existed).

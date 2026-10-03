@@ -11,8 +11,8 @@ const ROLE_LABEL = { hr: "HR", manager: "Manager", data: "Data team" };
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const v = await requireViewer();
-  // Every page under this layout reads db.* synchronously, so the fresh
-  // Supabase fetch has to happen here, once, before any of them render.
+  // Pages hydrate for themselves too (a layout and its page render at the
+  // same time); this call is shared with theirs, so it costs nothing extra.
   await hydrateStore();
   const departments = db.departments();
   const staffed = new Set(db.employees().map((e) => e.department_id));
@@ -45,9 +45,6 @@ export default async function DashboardLayout({ children }: { children: React.Re
       </aside>
 
       <main className="flex-1 overflow-y-auto bg-warmwhite">
-        <div className="bg-shine-bg text-shine-deep text-xs px-6 md:px-8 py-2 border-b border-shine/40">
-          Preview mode. Sign-in has no password and data can reset. Don&apos;t enter anything confidential.
-        </div>
         {children}
       </main>
     </div>

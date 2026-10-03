@@ -2,7 +2,7 @@
 //
 //   Score (0–100)   = achievement vs target, capped at 100
 //                     higher-is-better: actual / target
-//                     lower-is-better:  target / actual (actual 0 → 100)
+//                     lower-is-better:  target / actual (at or under target → 100)
 //   Weighted score  = score × weight / 100
 //   Overall score   = Σ weighted ÷ Σ weight of metrics WITH an actual × 100
 //                     (so missing data doesn't silently drag the score down —
@@ -24,8 +24,16 @@ export const STATUS_LABEL: Record<MetricStatus, string> = {
 };
 
 export function metricScore(m: Pick<ScorecardMetric, "actual" | "target" | "direction">): number | null {
-  if (m.actual == null || !m.target) return null;
-  const ratio = m.direction === "lower_is_better" ? (m.actual === 0 ? 1 : m.target / m.actual) : m.actual / m.target;
+  if (m.actual == null) return null;
+  let ratio: number;
+  if (m.direction === "lower_is_better") {
+    // At or under target = full marks (this also covers a target of 0, e.g.
+    // "0 complaints"). Over target scales down; over a target of 0 scores 0.
+    ratio = m.actual <= m.target ? 1 : m.target / m.actual;
+  } else {
+    if (!m.target) return null; // can't measure achievement against a target of 0
+    ratio = m.actual / m.target;
+  }
   return Math.max(0, Math.min(100, Math.round(ratio * 1000) / 10));
 }
 

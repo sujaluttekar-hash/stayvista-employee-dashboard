@@ -145,7 +145,7 @@ const METRICS_BY_EMPLOYEE: Record<string, MetricSeed[]> = {
     { name: "Revenue reporting accuracy", description: "Revenue reports matching finance close figures", type: "automatic", unit: "%", direction: "higher_is_better", target: 98, weight: 25 },
     { name: "Dashboard automation", description: "Manual reports replaced by automated dashboards", type: "manual", unit: "count", direction: "higher_is_better", target: 5, weight: 20, actual: 4 },
     { name: "Team request SLA", description: "Data requests closed within agreed turnaround", type: "automatic", unit: "%", direction: "higher_is_better", target: 90, weight: 25 },
-    { name: "Stakeholder satisfaction", description: "Quarterly survey score from department heads (out of 5)", type: "manual", unit: "score", direction: "higher_is_better", target: 4.5, weight: 15 },
+    { name: "Stakeholder satisfaction", description: "Monthly survey score from department heads (out of 5)", type: "manual", unit: "score", direction: "higher_is_better", target: 4.5, weight: 15 },
     { name: "Team capability building", description: "Trainings or knowledge sessions run for the team", type: "manual", unit: "count", direction: "higher_is_better", target: 3, weight: 15, actual: 2 },
   ],
   "07ff6885-1d83-47d5-adcc-51bb29ebff32": [

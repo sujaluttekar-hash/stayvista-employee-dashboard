@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { requireViewer } from "@/lib/auth/session";
 import { canManageEmployees } from "@/lib/auth/permissions";
-import { db } from "@/lib/data/store";
-import { currentPeriod } from "@/lib/periods";
+import { db, hydrateStore } from "@/lib/data/store";
+import { resolvePeriod } from "@/lib/periods";
+import { PeriodSwitcher } from "@/components/period-switcher";
 import { periodSummary } from "@/components/employee-table";
 import { scoreTone } from "@/components/ui";
 
@@ -14,14 +15,18 @@ const WHAT_YOU_CAN_DO = {
   data: "You have full access: employees, scorecards and data sources.",
 };
 
-export default async function Overview() {
+export default async function Overview({ searchParams }: { searchParams: { period?: string } }) {
   const v = await requireViewer();
-  const period = currentPeriod(db.periods());
+  await hydrateStore();
+  const period = resolvePeriod(db.periods(), searchParams.period);
   const departments = db.departments();
 
   return (
     <div className="p-6 md:p-8 max-w-[1200px]">
-      <h1 className="font-serif text-3xl">Departments</h1>
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <h1 className="font-serif text-3xl">Departments</h1>
+        <PeriodSwitcher periods={db.periods()} active={period} basePath="/" />
+      </div>
       <p className="text-sm text-muted mt-1 max-w-2xl">{WHAT_YOU_CAN_DO[v.role]}</p>
 
       <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -30,7 +35,7 @@ export default async function Overview() {
           const scores = people.map((e) => periodSummary(e.id, period.id)?.score).filter((s): s is number => s != null);
           const avg = scores.length ? Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 10) / 10 : null;
           return (
-            <Link key={d.id} href={`/departments/${d.slug}`} className="bg-panel border border-line rounded p-5 hover:border-ink/30 block">
+            <Link key={d.id} href={`/departments/${d.slug}?period=${period.id}`} className="bg-panel border border-line rounded p-5 hover:border-ink/30 block">
               <div className="flex items-start justify-between gap-3">
                 <div className="font-medium">{d.name}</div>
                 <span className={`w-2 h-2 rounded-full mt-1.5 ${DOT[d.accent]}`} aria-hidden />

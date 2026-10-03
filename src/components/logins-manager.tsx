@@ -15,9 +15,12 @@ export function LoginsManager() {
 
   function load() {
     fetch("/api/admin/logins")
-      .then((r) => r.json())
-      .then(setLogins)
-      .catch(() => setError("Couldn't load logins"));
+      .then(async (r) => {
+        const body = await r.json();
+        if (!r.ok) throw new Error(body.error ?? "Couldn't load logins");
+        setLogins(body);
+      })
+      .catch((e) => setError(e.message || "Couldn't load logins"));
   }
   useEffect(load, []);
 
@@ -46,11 +49,12 @@ export function LoginsManager() {
 
   async function removeLogin(id: string) {
     if (!confirm("Remove this login? They will no longer be able to sign in.")) return;
-    await fetch("/api/admin/logins", {
+    const res = await fetch("/api/admin/logins", {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id }),
     });
+    if (!res.ok) setError((await res.json().catch(() => ({}))).error ?? "Could not remove login");
     load();
   }
 
@@ -87,7 +91,7 @@ export function LoginsManager() {
             type="text"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            placeholder="Leave blank for a sign-in link"
+            placeholder="Min 8 characters, or leave blank for a link"
             className="border border-line rounded px-2 py-1.5 text-sm"
           />
         </div>

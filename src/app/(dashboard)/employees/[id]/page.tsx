@@ -2,17 +2,19 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireViewer } from "@/lib/auth/session";
 import { canEditScores, canManageEmployees } from "@/lib/auth/permissions";
-import { db } from "@/lib/data/store";
+import { db, hydrateStore } from "@/lib/data/store";
 import { overall } from "@/lib/scoring";
 import { resolvePeriod } from "@/lib/periods";
 import { MetricRow } from "@/components/metric-row";
 import { AddMetricForm, AssignManagerForm, EmployeeDetailsForm } from "@/components/org-forms";
 import { ActionButton } from "@/components/forms";
+import { PeriodSwitcher } from "@/components/period-switcher";
 import { Notice, initials, scoreTone } from "@/components/ui";
 import { startScorecard } from "@/app/actions";
 
 export default async function EmployeeScorecardPage({ params, searchParams }: { params: { id: string }; searchParams: { period?: string } }) {
   const v = await requireViewer();
+  await hydrateStore();
   const emp = db.employee(params.id);
   if (!emp) notFound();
 
@@ -65,21 +67,16 @@ export default async function EmployeeScorecardPage({ params, searchParams }: { 
 
       <div className="mt-6"><Notice tone="info">{access}</Notice></div>
 
-      {/* Period switcher */}
-      <nav className="mt-8 flex items-center gap-1 border-b border-line" aria-label="Review period">
-        {periods.map((p) => (
-          <Link key={p.id} href={`/employees/${emp.id}?period=${p.id}`}
-            className={`px-4 py-2 text-sm -mb-px border-b-2 ${p.id === period.id ? "border-ink text-ink" : "border-transparent text-muted hover:text-ink"}`}>
-            {p.label}
-          </Link>
-        ))}
-      </nav>
+      {/* Month switcher */}
+      <div className="mt-8 pb-3 border-b border-line">
+        <PeriodSwitcher periods={periods} active={period} basePath={`/employees/${emp.id}`} />
+      </div>
 
       {!sc ? (
         <div className="mt-6 bg-panel border border-line rounded p-8 text-center">
           <div className="font-serif text-lg">No scorecard for {period.label} yet</div>
           <p className="text-sm text-muted mt-1 mb-4">
-            {canEdit ? "Start one. It copies the metrics from the previous period with actuals cleared." : "The Manager or Data team hasn't started this period's scorecard yet."}
+            {canEdit ? "Start one. It copies the metrics from the closest earlier month, with actuals cleared." : "The Manager or Data team hasn't started this period's scorecard yet."}
           </p>
           {canEdit && <div className="inline-block"><ActionButton action={startScorecard} tone="primary" fields={{ employee_id: emp.id, period_id: period.id }}>Start {period.label} scorecard</ActionButton></div>}
         </div>

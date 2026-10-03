@@ -1,55 +1,54 @@
-// Server-only helper. Never import this from a Client Component.
-// Redash's own API returns a job/result envelope; poll_job handles the
-// case where the query needs to actually run before results are ready.
+import "server-only";
+// Redash API helper. Server only: never import this from a Client Component.
+// Redash's API returns a job/result envelope; pollJob handles the case where
+// the query has to actually run before results are ready.
 
-type RedashRow = Record<string, string | number | null>;
+export type RedashRow = Record<string, string | number | null>;
 
-async function pollJob(baseUrl: string, apiKey: string, jobId: string) {
-  for (let i = 0; i < 15; i++) {
-    const res = await fetch(`${baseUrl}/api/jobs/${jobId}`, {
-      headers: { Authorization: `Key ${apiKey}` },
-    });
-    const data = await res.json();
-    if (data.job.status === 3) return data.job.query_result_id;
-    if (data.job.status === 4) throw new Error(data.job.error || "Redash job failed");
+const base = () => (process.env.REDASH_BASE_URL ?? "").replace(/\/+$/, "");
+const headers = () => ({ Authorization: `Key ${process.env.REDASH_API_KEY}` });
+const timeout = () => AbortSignal.timeout(20_000);
+
+// Redash job statuses: 1 queued, 2 running, 3 finished, 4 failed, 5 cancelled.
+async function pollJob(jobId: string): Promise<number> {
+  for (let i = 0; i < 30; i++) {
+    const res = await fetch(`${base()}/api/jobs/${jobId}`, { headers: headers(), signal: timeout() });
+    if (!res.ok) throw new Error(`Redash job check failed (${res.status})`);
+    const { job } = await res.json();
+    if (job.status === 3) return job.query_result_id;
+    if (job.status === 4) throw new Error(job.error || "Redash query failed");
+    if (job.status === 5) throw new Error("Redash query was cancelled");
     await new Promise((r) => setTimeout(r, 1000));
   }
-  throw new Error("Redash job timed out after 15s");
+  throw new Error("Redash query took longer than 30 seconds");
 }
 
-export async function fetchRedashQuery(queryId: number): Promise<RedashRow[]> {
-  const baseUrl = process.env.REDASH_BASE_URL!;
-  const apiKey = process.env.REDASH_API_KEY!;
-  if (!baseUrl || !apiKey) {
-    throw new Error("REDASH_BASE_URL / REDASH_API_KEY not set — see .env.example");
-  }
-
-  // Trigger a fresh run rather than trusting a stale cached result.
-  const refreshRes = await fetch(`${baseUrl}/api/queries/${queryId}/refresh`, {
-    method: "POST",
-    headers: { Authorization: `Key ${apiKey}` },
-  });
-  if (!refreshRes.ok) throw new Error(`Redash refresh failed: ${refreshRes.status}`);
-  const { job } = await refreshRes.json();
-
-  const resultId = await pollJob(baseUrl, apiKey, job.id);
-
-  const resultRes = await fetch(`${baseUrl}/api/queries/${queryId}/results/${resultId}.json`, {
-    headers: { Authorization: `Key ${apiKey}` },
-  });
-  if (!resultRes.ok) throw new Error(`Redash result fetch failed: ${resultRes.status}`);
-  const { query_result } = await resultRes.json();
+async function latestCachedRows(queryId: number): Promise<RedashRow[]> {
+  const res = await fetch(`${base()}/api/queries/${queryId}/results.json`, { headers: headers(), signal: timeout() });
+  if (!res.ok) throw new Error(`Redash result fetch failed (${res.status})`);
+  const { query_result } = await res.json();
   return query_result.rows as RedashRow[];
 }
 
-// Expected Redash row shape (per-department query), one row per
-// person × month × metric — this is the contract the "data" role's
-// Redash query needs to satisfy. TODO: confirm exact column names once
-// each department's real query exists; adjust the mapping in
-// /api/redash/sync accordingly.
-export type ExpectedRedashRow = {
-  employee_no: string;
-  month: string;      // 'YYYY-MM-01'
-  metric_key: string; // must match scorecard_metrics.key
-  actual: number;
-};
+export async function fetchRedashQuery(queryId: number): Promise<RedashRow[]> {
+  if (!base() || !process.env.REDASH_API_KEY) {
+    throw new Error("REDASH_BASE_URL / REDASH_API_KEY not set");
+  }
+
+  // Ask Redash to run the query fresh rather than trusting a stale cache.
+  const refresh = await fetch(`${base()}/api/queries/${queryId}/refresh`, { method: "POST", headers: headers(), signal: timeout() });
+  if (!refresh.ok) {
+    // 401/403/404 mean the key can't see or run this query: say so plainly.
+    if ([401, 403, 404].includes(refresh.status)) throw new Error(`Redash says no access to query #${queryId} (${refresh.status})`);
+    // Anything else (e.g. a query with parameters can't be refreshed this way):
+    // fall back to the most recent saved result instead of failing the sync.
+    return latestCachedRows(queryId);
+  }
+  const { job } = await refresh.json();
+  const resultId = await pollJob(job.id);
+
+  const res = await fetch(`${base()}/api/queries/${queryId}/results/${resultId}.json`, { headers: headers(), signal: timeout() });
+  if (!res.ok) throw new Error(`Redash result fetch failed (${res.status})`);
+  const { query_result } = await res.json();
+  return query_result.rows as RedashRow[];
+}

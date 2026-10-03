@@ -6,7 +6,7 @@ import { revalidatePath } from "next/cache";
 import { requireViewer } from "@/lib/auth/session";
 import { assert, canEditScores, canManageEmployees, canRunSync, PermissionError } from "@/lib/auth/permissions";
 import { db, writes, hydrateStore } from "@/lib/data/store";
-import { fetchAutomaticValue } from "@/lib/sources";
+import { createSyncSession, redashConfigured } from "@/lib/sources";
 import { formatValue } from "@/lib/scoring";
 import type { EmployeeStatus, MetricDirection, MetricType, ScorecardMetric } from "@/lib/data/types";
 
@@ -37,11 +37,9 @@ async function run(fn: () => string | Promise<string>): Promise<ActionState> {
   } catch (e: any) {
     if (e instanceof PermissionError) return { error: e.message };
     if (e?.digest?.startsWith?.("NEXT_REDIRECT")) throw e;
+    // Details go to the server log only; people see a plain message.
     console.error(e);
-    // TEMP: showing the real error while debugging the Supabase write
-    // path. Revert to a generic "Something went wrong" message once
-    // things are working -- this can leak internal details otherwise.
-    return { error: e?.message ? `Error: ${e.message}` : "Something went wrong. Please try again." };
+    return { error: "Something went wrong. Please try again. If it keeps happening, tell the Data team." };
   }
 }
 
@@ -269,32 +267,56 @@ export async function addDepartmentMetric(_: ActionState, f: FormData) {
   });
 }
 
-// ── Automatic data (admin only) ──────────────────────────────────────
+// ── Automatic data (Data team only) ──────────────────────────────────
+// Pulls every Redash-linked automatic metric for one month. Each query is
+// fetched once and shared, unchanged values are left alone (so the audit
+// log isn't flooded), and a problem with one metric never stops the rest.
 export async function syncAutomatic(_: ActionState, f: FormData) {
   return run(async () => {
     const v = await requireViewer();
     assert(canRunSync(v), "Only the Data team can run a data sync");
-    const mode = str(f, "mode") === "demo" ? "demo" : "live";
     const period = db.periods().find((p) => p.id === str(f, "period_id"));
-    assert(!!period, "Choose a review period");
+    assert(!!period, "Choose a review month");
+    assert(redashConfigured(), "Redash isn't connected yet. Ask whoever manages the server to set REDASH_BASE_URL and REDASH_API_KEY.");
 
-    let filled = 0;
-    const skipped: string[] = [];
+    type Job = { m: ScorecardMetric; e: NonNullable<ReturnType<typeof db.employee>> };
+    const jobs: Job[] = [];
     for (const sc of db.scorecards().filter((s) => s.period_id === period!.id)) {
-      const emp = db.employee(sc.employee_id)!;
-      for (const m of db.metrics(sc.id).filter((x) => x.type === "automatic")) {
-        const r = await fetchAutomaticValue(m, emp, period!, mode);
-        if (r.ok) {
-          await writes.updateMetric(v.user.id, m.id, { actual: r.value, actual_source: r.source },
-            `${m.name}: ${r.source === "demo" ? "DEMO value" : "synced from Redash"} ${formatValue(r.value, m.unit)}`);
-          filled++;
-        } else skipped.push(r.reason);
-      }
+      const e = db.employee(sc.employee_id);
+      if (!e || e.status !== "active") continue; // don't sync people who've left
+      for (const m of db.metrics(sc.id)) if (m.type === "automatic") jobs.push({ m, e });
     }
-    const reasons = Array.from(new Set(skipped));
-    return mode === "demo"
-      ? `Filled ${filled} automatic metrics with DEMO values`
-      : `Synced ${filled} metrics${reasons.length ? `. Skipped ${skipped.length}: ${reasons.join("; ")}` : ""}`;
+    assert(jobs.length > 0, `No automatic metrics on any ${period!.label} scorecard yet`);
+
+    const session = createSyncSession();
+    await session.preload(jobs.flatMap(({ m }) => (m.source_config?.query_id ? [m.source_config.query_id] : [])));
+
+    let updated = 0, unchanged = 0;
+    const skipped = new Map<string, number>();
+    const fail = (reason: string) => skipped.set(reason, (skipped.get(reason) ?? 0) + 1);
+
+    // A few writes at a time: quick, without hammering the database.
+    for (let i = 0; i < jobs.length; i += 6) {
+      await Promise.all(jobs.slice(i, i + 6).map(async ({ m, e }) => {
+        const r = await session.value(m, e, period!);
+        if (!r.ok) return fail(r.reason);
+        if (m.actual === r.value && m.actual_source === r.source) { unchanged++; return; }
+        try {
+          await writes.updateMetric(v.user.id, m.id, { actual: r.value, actual_source: r.source },
+            `${m.name}: synced from Redash ${formatValue(m.actual, m.unit)} → ${formatValue(r.value, m.unit)}`);
+          updated++;
+        } catch (err) {
+          console.error(err);
+          fail("A value couldn't be saved");
+        }
+      }));
+    }
+
+    const problems = Array.from(skipped, ([reason, n]) => `${reason} (${n})`);
+    const head = `${period!.label}: ${updated} updated, ${unchanged} already up to date`;
+    if (!problems.length) return head;
+    // Partial success is still reported as success; the skipped list says what to fix.
+    return `${head}. Skipped ${Array.from(skipped.values()).reduce((a, b) => a + b, 0)}: ${problems.join("; ")}`;
   });
 }
 
@@ -309,14 +331,5 @@ export async function clearDemoValues(_: ActionState) {
         n++;
       }
     return `Cleared ${n} demo values`;
-  });
-}
-
-export async function resetPreview(_: ActionState) {
-  return run(async () => {
-    const v = await requireViewer();
-    assert(canRunSync(v), "Only the Data team can reset preview data");
-    await writes.reset();
-    return "Preview data reset";
   });
 }

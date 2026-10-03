@@ -2,16 +2,18 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireViewer } from "@/lib/auth/session";
 import { canManageEmployees } from "@/lib/auth/permissions";
-import { db } from "@/lib/data/store";
+import { db, hydrateStore } from "@/lib/data/store";
 import { resolvePeriod } from "@/lib/periods";
 import { EmployeeTable } from "@/components/employee-table";
 import { AddEmployeeForm } from "@/components/org-forms";
 import { LoginsManager } from "@/components/logins-manager";
+import { PeriodSwitcher } from "@/components/period-switcher";
 
 // HR + Data only. The master employee list: add, remove, set department.
 export default async function ManagementPage({ searchParams }: { searchParams: { dept?: string; period?: string } }) {
   const v = await requireViewer();
   if (!canManageEmployees(v)) notFound();
+  await hydrateStore();
 
   const period = resolvePeriod(db.periods(), searchParams.period);
   const departments = db.departments();
@@ -46,7 +48,8 @@ export default async function ManagementPage({ searchParams }: { searchParams: {
           <Link key={d.id} href={`/management?dept=${d.slug}`} className={chip(filter === d.slug)}>{d.name}</Link>
         ))}
       </div>
-      <div className="mt-4"><EmployeeTable employees={list} period={period} rowAction="remove" /></div>
+      <div className="mt-4 flex justify-end"><PeriodSwitcher periods={db.periods()} active={period} basePath="/management" keep={{ dept: filter }} /></div>
+      <div className="mt-3"><EmployeeTable employees={list} period={period} rowAction="remove" /></div>
       <p className="text-xs text-muted mt-3">To change someone&apos;s department, designation or L1 / L2 manager, open their name.</p>
     </div>
   );
