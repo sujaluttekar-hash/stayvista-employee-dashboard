@@ -18,6 +18,7 @@ export default function LoginPage() {
     const reason = new URLSearchParams(window.location.search).get("reason");
     if (reason === "denied") setError(NO_ACCESS);
     if (reason === "unavailable") setError("We couldn't check your access just now. Please try again in a moment.");
+    if (reason === "config") setError("This copy of the app isn't fully set up yet (its Supabase settings are missing). Please tell the Data team.");
   }, []);
 
   async function signIn(e: React.FormEvent) {
